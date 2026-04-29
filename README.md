@@ -26,12 +26,11 @@ This is Version3 of Sonance - a UI rewrite which includes a completely new hardw
 ## Screenshots
 
 ![Home screen](screenshots/home.jpg)
-![Login screen](screenshots/login.jpg)
 ![Artist bio](screenshots/artistbio.jpg)
+![Songs](screenshots/songs.jpg)
 ![Now Playing](screenshots/nowplaying.jpg)
-![Lyrics](screenshots/lyrics.jpg)
 ![Search](screenshots/search.jpg)
-![Accent Colours](screenshots/accentcolours.jpg)
+![Accent Colours](screenshots/settings.jpg)
 
 ## Requirements
 
