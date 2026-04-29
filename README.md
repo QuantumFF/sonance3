@@ -52,7 +52,7 @@ This is Version3 of Sonance - a UI rewrite which includes a completely new hardw
 ### Option 2: Build from source
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/sonance3.git
+git clone https://github.com/MrSimmo/sonance3.git
 cd sonance3
 bash build.sh
 ```
