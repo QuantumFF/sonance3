@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080, initial-scale=1.0, user-scalable=no">
+    <title>Sonance</title>
+    <link rel="stylesheet" href="css/styles.css?v=v3-8">
+</head>
+<body>
+    <div id="app"></div>
+    <audio id="sonance-audio" preload="auto" style="display:none;"></audio>
+    <audio id="sonance-audio-preload" preload="auto" style="display:none;"></audio>
+    <object id="av-player" type="application/avplayer" style="position:absolute;left:0;top:0;width:1px;height:1px;pointer-events:none;"></object>
+
+    <script type="text/javascript" src="$WEBAPIS/webapis/webapis.js"></script>
+    <script>
+        // On browser the $WEBAPIS path 404s silently, which is expected.
+        if (typeof webapis === 'undefined') {
+            console.log('[Sonance] Not on Tizen — WebAPIs not loaded');
+        }
+    </script>
+
+    <!-- BEGIN:JS_SCRIPTS -->
+    <script src="js/sonance-core.min.js?v=v3-8"></script>
+    <script src="js/sonance-screens.min.js?v=v3-8"></script>
+    <!-- END:JS_SCRIPTS -->
+</body>
+</html>
