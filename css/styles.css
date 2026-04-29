@@ -1,0 +1,3899 @@
+/* ============================================
+   Sonance — Base Styles
+   Samsung Tizen TV Music Player
+   ============================================ */
+
+/* --- CSS Custom Properties --- */
+:root {
+    --bg-primary: #0a0a0c;
+    --bg-secondary: #121217;
+    --bg-card: #1a1a22;
+    --bg-elevated: #222230;
+    --bg-main: #1a1a24;
+    --accent: #e44d8a;
+    --accent-rgb: 228, 77, 138;
+    --accent-soft: rgba(var(--accent-rgb), 0.15);
+    --accent-glow: rgba(var(--accent-rgb), 0.35);
+    --text-primary: #f0f0f5;
+    --text-secondary: #8e8ea0;
+    --text-muted: #55556a;
+    --border: #2a2a38;
+}
+
+/* --- Global Reset --- */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body, #app {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-main);
+    color: var(--text-primary);
+    font-family: 'SamsungOne', 'SamsungOneUIFW', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* --- Scrollbar hidden globally on TV (V3-5) --- */
+::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+/* --- Focus Ring --- */
+/* Remove all default browser focus outlines */
+*:focus {
+    outline: none;
+}
+
+/* V3-4: focusable base — no generic outline. Individual card/row rules
+   below define focus via transform/background only (GPU-composited). */
+.focusable {
+    /* transitions defined per-class; keep no global `transition: all` */
+}
+
+/* V3-4: no default focus ring. Specific card/row rules add scale + bg. */
+.focusable.focused {
+    outline: none;
+}
+
+/* --- V3-6: Lazy-loaded image fade-in ---
+   Cover-art <img> elements created by SonanceComponents start hidden over
+   their placeholder. Once LazyLoader assigns src + .loaded the GPU-only
+   opacity transition fades the real image in. Background is transparent —
+   the placeholder underneath shows through during load. */
+.lazy-art {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.lazy-art.loaded {
+    opacity: 1;
+}
+
+/* --- Screen Base --- */
+.screen {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: none;
+}
+
+.screen.active {
+    display: flex;
+}
+
+/* --- Equaliser Bar Animation --- */
+@keyframes barBounce {
+    0%, 100% { height: 4px; }
+    25% { height: 16px; }
+    50% { height: 8px; }
+    75% { height: 20px; }
+}
+
+.eq-bar {
+    width: 3px;
+    background: var(--accent);
+    border-radius: 1px;
+    animation: barBounce 0.8s ease-in-out infinite;
+    display: inline-block;
+    vertical-align: bottom;
+    margin-right: 2px;
+}
+
+.eq-bar:nth-child(2) { animation-delay: 0.1s; }
+.eq-bar:nth-child(3) { animation-delay: 0.2s; }
+.eq-bar:nth-child(4) { animation-delay: 0.3s; }
+
+/* ============================================
+   Login Screen
+   ============================================ */
+.login-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    background: var(--bg-primary);
+}
+
+.login-card {
+    width: 100%;
+    max-width: 440px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 40px;
+}
+
+/* Logo area in login card */
+.login-logo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 36px;
+}
+
+.login-logo-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--accent), #8a4dff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 14px;
+}
+
+.login-logo-icon svg {
+    width: 30px;
+    height: 30px;
+    fill: white;
+}
+
+.login-logo-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.5px;
+}
+
+.login-logo-subtitle {
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-top: 4px;
+}
+
+/* Form fields */
+.login-field {
+    margin-bottom: 18px;
+}
+
+.login-field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.login-field input {
+    width: 100%;
+    padding: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.login-field input::placeholder {
+    color: var(--text-muted);
+}
+
+.login-field input:focus,
+.login-field input:active,
+.login-field input:focus-visible {
+    outline: none !important;
+    -webkit-appearance: none;
+    -webkit-tap-highlight-color: transparent;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.3) !important;
+}
+
+/* Server URL row — side by side */
+.login-server-row {
+    display: flex;
+}
+
+.login-server-row > * + * {
+    margin-left: 12px;
+}
+
+.login-server-row .login-field:first-child {
+    flex: 1;
+}
+
+.login-server-row .login-field:last-child {
+    width: 100px;
+}
+
+/* Connect button */
+.login-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    border: none;
+    border-radius: 12px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    margin-top: 8px;
+}
+
+.login-btn:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 2px var(--accent);
+    transform: none;
+}
+
+.login-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Error message */
+.login-error {
+    margin-top: 16px;
+    padding: 12px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 10px;
+    color: #ef4444;
+    font-size: 13px;
+    text-align: center;
+    display: none;
+}
+
+.login-error.visible {
+    display: block;
+}
+
+/* ============================================
+   App Shell Layout (v3 — top nav + centred content)
+   ============================================ */
+.app-layout {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+/* ============================================
+   Status dot (Settings page)
+   ============================================ */
+.settings-status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #34d399;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+.settings-status-dot.disconnected {
+    background: #ef4444;
+}
+
+/* ============================================
+   Top Navigation Bar (v3)
+   Floating pill with sliding pill highlight
+   ============================================ */
+#top-nav {
+    position: fixed;
+    top: 24px;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+}
+
+#top-nav-bar {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    background: rgba(50, 50, 60, 0.85);
+    border-radius: 25px;
+    padding: 4px 6px;
+    pointer-events: auto;
+}
+
+.top-nav-items {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+}
+
+.top-nav-item {
+    position: relative;
+    z-index: 2;
+    padding: 8px 20px;
+    font-size: 15px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.55);
+    white-space: nowrap;
+    margin: 0 2px;  /* NOT flex gap */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    border-radius: 20px;
+}
+
+.top-nav-item svg {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
+.top-nav-item.focused {
+    color: white;
+    font-weight: 600;
+}
+
+.top-nav-item.selected {
+    color: white;
+    font-weight: 600;
+}
+
+/* Sliding pill highlight — GPU-only: fixed base width, animate via
+   translateX + scaleX. transform-origin:left so scaleX grows rightward
+   from the anchor point. */
+#top-nav-pill {
+    position: absolute;
+    top: 4px;
+    left: 0;
+    width: 100px;
+    height: calc(100% - 8px);
+    border-radius: 20px;
+    z-index: 1;
+    transform-origin: left center;
+    transition: transform 0.25s ease;
+    will-change: transform;
+    pointer-events: none;
+    background: transparent;
+}
+
+/* Focused state (nav bar active — user is browsing nav items) — accent fill */
+#top-nav-pill.focused {
+    background: rgba(var(--accent-rgb), 0.55);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Selected state (user has entered page content) — subtle grey indicator */
+#top-nav-pill.selected {
+    background: rgba(255, 255, 255, 0.15);
+    box-shadow: none;
+}
+
+/* ============================================
+   Page Container (v3)
+   Holds the currently-rendered screen + transition ghost
+   ============================================ */
+#page-container {
+    position: fixed;
+    top: 80px;      /* clear the nav bar */
+    left: 0;
+    right: 0;
+    bottom: 76px;   /* clear the NP bar */
+    overflow: hidden;
+}
+
+#page-container.no-nav {
+    top: 0;
+}
+
+#page-container.no-np-bar {
+    bottom: 0;
+}
+
+.page-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;  /* screens manage their own scroll */
+    will-change: transform, opacity;
+    transform: translateX(0);
+    opacity: 1;
+    padding: 28px 48px 20px;
+    box-sizing: border-box;
+}
+
+/* Centre the page content within the full 1920px width (max 1600px) */
+#page-current > * {
+    max-width: 1600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.page-ghost {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    pointer-events: none;
+    will-change: transform, opacity;
+    z-index: 1;
+}
+
+/* Centred page content wrapper */
+.page-content {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 28px 48px 20px;
+}
+
+/* Legacy content-area compatibility — many screens still expect this as the
+   scrolling container. The page-layer itself is the scroller now.
+   Scoped to NOT apply to .page-layer so it can't override the page layer's
+   absolute positioning (which would collapse it to 0 height and break NP). */
+.content-area:not(.page-layer) {
+    overflow: visible;
+    padding: 0;
+    position: relative;
+}
+
+/* Album detail active: prevent outer scroll, enable flex column for split pane */
+#page-current.album-active {
+    overflow: hidden !important;
+}
+
+#page-current.album-active > .page-content {
+    display: flex !important;
+    flex-direction: column !important;
+    padding-bottom: 8px !important;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+/* ============================================
+   Now Playing Bar (76px) — fixed full-width bottom bar (v3)
+   ============================================ */
+.now-playing-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 76px;
+    background: rgba(34, 34, 48, 0.95);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    z-index: 50;
+}
+
+.now-playing-bar .mini-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 2px;
+    width: 100%;
+    background: var(--accent);
+    transform-origin: left center;
+    transform: scaleX(var(--progress, 0));
+    transition: transform 0.3s linear;
+    will-change: transform;
+}
+
+.now-playing-bar-left {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+}
+
+.now-playing-bar-left > * + * {
+    margin-left: 14px;
+}
+
+.now-playing-bar-art {
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    background: var(--bg-card);
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.now-playing-bar-art img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.now-playing-bar-info {
+    min-width: 0;
+}
+
+.now-playing-bar-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.now-playing-bar-artist {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.now-playing-bar-center {
+    display: flex;
+    align-items: center;
+}
+
+.now-playing-bar-center > * + * {
+    margin-left: 20px;
+}
+
+.now-playing-bar-center button {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.now-playing-bar-center button svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+/* Now playing bar button focus state */
+/* NP bar small buttons: color tint only, no glow/outline */
+.np-bar-btn.focused {
+    outline: none !important;
+    border-radius: 50%;
+    color: var(--accent);
+    box-shadow: none;
+    transform: none;
+}
+
+/* NP bar play button: pink fill on focus */
+.play-btn-main.focused {
+    outline: none !important;
+    background: var(--accent) !important;
+    box-shadow: none;
+    transform: none;
+}
+
+.play-btn-main.focused svg {
+    fill: white !important;
+}
+
+.play-btn-main {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #fff !important;
+    color: var(--bg-primary) !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.play-btn-main svg {
+    width: 18px;
+    height: 18px;
+    fill: var(--bg-primary) !important;
+}
+
+.now-playing-bar-right {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.now-playing-bar-right > * + * {
+    margin-left: 12px;
+}
+
+.volume-icon {
+    color: var(--text-muted);
+}
+
+.volume-icon svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}
+
+.mini-volume-bar {
+    width: 80px;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.mini-volume-fill {
+    height: 100%;
+    width: 100%;
+    background: var(--text-muted);
+    border-radius: 2px;
+    transform-origin: left center;
+    transform: scaleX(var(--progress, 1));
+    transition: transform 0.2s ease;
+    will-change: transform;
+}
+
+/* ============================================
+   Now Playing Screen (Full-screen)
+   ============================================ */
+.np-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+}
+
+.np-screen-bg {
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    z-index: 0;
+    opacity: 0.6;
+}
+
+.np-screen-overlay-top {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 30%;
+    background: linear-gradient(to bottom, rgba(10, 10, 12, 0.8), transparent);
+    z-index: 1;
+    pointer-events: none;
+}
+
+.np-screen-overlay-bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 40%;
+    background: linear-gradient(to top, rgba(10, 10, 12, 0.85), transparent);
+    z-index: 1;
+    pointer-events: none;
+}
+
+.np-screen-content {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 600px;
+    width: 100%;
+    padding: 20px;
+}
+
+.np-screen-art {
+    width: 280px;
+    height: 280px;
+    margin-bottom: 28px;
+    position: relative;
+}
+
+.np-screen-art-inner {
+    width: 280px;
+    height: 280px;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+.np-screen-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    margin-bottom: 6px;
+}
+
+.np-screen-subtitle {
+    font-size: 17px;
+    color: var(--text-secondary);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    margin-bottom: 28px;
+}
+
+/* Progress bar */
+.np-screen-progress-wrap {
+    width: 100%;
+    margin-bottom: 20px;
+}
+
+.np-screen-progress {
+    width: 100%;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 8px 0;
+}
+
+.np-screen-progress.focused {
+    outline: none;
+    transform: none;
+}
+
+/* Focused scrubber: scale it up via transform only — height stays fixed
+   so no layout-triggering transition. */
+.np-screen-progress.focused .np-screen-progress-scrubber {
+    transform: translateX(var(--scrub-x, 0px)) scale(2);
+    background: var(--accent);
+    box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.6);
+}
+
+.np-screen-progress-track {
+    position: relative;
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+/* GPU-safe fill: width stays 100%, we animate transform: scaleX via
+   JS (which writes --progress). transform-origin: left keeps growth
+   anchored at the start of the bar. */
+.np-screen-progress-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(to right, var(--accent), rgba(var(--accent-rgb), 0.75));
+    border-radius: 3px;
+    transform-origin: left center;
+    transform: scaleX(var(--progress, 0));
+    transition: transform 0.3s linear;
+    will-change: transform;
+}
+
+/* GPU-safe scrubber: positioned via transform: translateX in pixels
+   (--scrub-x written by JS using the track width). Base rests at left:0
+   then translates. No left/width transitions. */
+.np-screen-progress-scrubber {
+    position: absolute;
+    top: 50%;
+    left: -6.5px;
+    margin-top: -6.5px;
+    width: 13px;
+    height: 13px;
+    background: white;
+    border-radius: 50%;
+    transform: translateX(var(--scrub-x, 0px));
+    box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.4);
+    transition: transform 0.3s linear;
+    will-change: transform;
+}
+
+.np-screen-time-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+}
+
+.np-screen-time {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Transport controls */
+.np-screen-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 32px;
+}
+
+.np-screen-controls > * + * {
+    margin-left: 28px;
+}
+
+.np-ctrl-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    position: relative;
+}
+
+.np-ctrl-btn.focused {
+    outline: none !important;
+    color: var(--accent);
+    transform: none;
+    box-shadow: none;
+}
+
+.np-ctrl-btn svg {
+    fill: currentColor;
+}
+
+.np-ctrl-toggle.active {
+    color: var(--accent);
+}
+
+.np-ctrl-toggle.active svg {
+    fill: var(--accent);
+}
+
+.np-ctrl-play {
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    background: white;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.np-ctrl-play svg {
+    fill: var(--bg-primary);
+}
+
+.np-ctrl-play.focused {
+    outline: none !important;
+    transform: none;
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    background: var(--accent);
+    box-shadow: 0 0 24px rgba(var(--accent-rgb), 0.4);
+}
+
+.np-ctrl-play.focused svg {
+    fill: white;
+}
+
+.np-repeat-badge {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--bg-primary);
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Volume bar */
+.np-screen-volume {
+    display: flex;
+    align-items: center;
+    opacity: 0.6;
+    color: var(--text-muted);
+}
+
+.np-screen-volume > * + * {
+    margin-left: 12px;
+}
+
+.np-screen-volume-bar {
+    width: 120px;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.np-screen-volume-fill {
+    height: 100%;
+    width: 100%;
+    background: var(--text-secondary);
+    border-radius: 2px;
+    transform-origin: left center;
+    transform: scaleX(0.7);
+    transition: transform 0.2s ease;
+    will-change: transform;
+}
+
+/* ============================================
+   Queue Screen
+   ============================================ */
+.queue-screen {
+    display: flex;
+    padding: 0 8px;
+    height: 100%;
+    overflow: hidden;
+}
+
+.queue-screen > * + * {
+    margin-left: 32px;
+}
+
+.queue-left {
+    width: 320px;
+    flex-shrink: 0;
+}
+
+.queue-right {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    position: relative;
+}
+
+.queue-section-heading {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+}
+
+/* Now Playing card */
+.queue-np-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    will-change: transform;
+    transform-origin: center center;
+}
+
+/* V3-4: scale-up focus, no accent outline */
+.queue-np-card.focused {
+    outline: none !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    border-color: var(--border) !important;
+    transform: scale(1.04);
+    z-index: 5;
+}
+
+.queue-np-art {
+    width: 280px;
+    height: 280px;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.queue-np-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+
+.queue-np-artist {
+    font-size: 15px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 16px;
+}
+
+.queue-np-progress-wrap {
+    width: 100%;
+}
+
+.queue-np-progress {
+    width: 100%;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.queue-np-progress-fill {
+    height: 100%;
+    width: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transform-origin: left center;
+    transform: scaleX(var(--progress, 0));
+    transition: transform 0.3s linear;
+    will-change: transform;
+}
+
+.queue-np-time-row {
+    display: flex;
+    justify-content: space-between;
+}
+
+.queue-np-time {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Queue list rows (V3-4: centred narrow list) */
+.queue-list {
+    padding-bottom: 24px;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding-left: 12px;
+    padding-right: 12px;
+}
+
+.queue-empty {
+    color: var(--text-muted);
+    font-size: 15px;
+    padding: 32px 0;
+    text-align: center;
+}
+
+.queue-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.12s ease;
+    /* V3-6: will-change applied dynamically to focused row only */
+    transform-origin: left center;
+}
+
+.queue-row > * + * {
+    margin-left: 14px;
+}
+
+/* V3-6-fix GFX-4: focused queue rows match the top-nav pill (0.55). */
+.queue-row.focused {
+    background: rgba(var(--accent-rgb), 0.55);
+    outline: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: scale(1.02);
+}
+
+.queue-row.focused .queue-row-title {
+    color: white;
+    font-weight: 600;
+}
+
+.queue-row-num {
+    width: 28px;
+    font-size: 14px;
+    color: var(--text-muted);
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.queue-row-thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: 4px;
+    background: var(--bg-card);
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.queue-row-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.queue-row-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.queue-row-artist {
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.queue-row-duration {
+    font-size: 14px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+/* ============================================
+   Placeholder Screens
+   ============================================ */
+.screen-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    padding: 48px 32px;
+    text-align: center;
+}
+
+.screen-placeholder-icon {
+    width: 56px;
+    height: 56px;
+    fill: var(--text-muted);
+    opacity: 0.4;
+    margin-bottom: 20px;
+}
+
+.screen-placeholder-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.screen-placeholder-subtitle {
+    font-size: 14px;
+    color: var(--text-muted);
+    max-width: 400px;
+    line-height: 1.5;
+}
+
+/* Focusable placeholder card */
+.placeholder-card {
+    margin-top: 28px;
+    padding: 14px 28px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    will-change: transform;
+    transform-origin: center center;
+}
+
+.placeholder-card.focused {
+    outline: none !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    border-color: transparent !important;
+    transform: scale(1.08);
+    color: var(--text-primary);
+    border-color: rgba(var(--accent-rgb), 0.3);
+    background: var(--bg-elevated);
+}
+
+/* ============================================
+   Settings Screen
+   ============================================ */
+.settings-content {
+    max-width: 520px;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 20px;
+}
+
+.settings-section {
+    margin-bottom: 36px;
+}
+
+.settings-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+}
+
+.settings-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-info-label {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.settings-info-value {
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.settings-logout-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 12px 28px;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 12px;
+    color: #ef4444;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    will-change: transform;
+}
+
+.settings-logout-btn.focused {
+    outline: none !important;
+    transform: scale(1.04);
+    background: rgba(239, 68, 68, 0.2);
+}
+
+.settings-logout-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 10px;
+    line-height: 1.4;
+}
+
+/* --- Accent Colour Picker --- */
+.accent-picker-row {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.accent-picker-label {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 14px;
+}
+
+.accent-swatches {
+    display: block;
+    line-height: 0;
+}
+
+.accent-swatch {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    display: inline-block;
+    margin-right: 12px;
+    margin-bottom: 8px;
+    padding: 0;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: transform 0.15s ease;
+    /* V3-6: will-change applied dynamically */
+}
+
+.accent-swatch.selected {
+    border-color: white;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+.accent-swatch.focused {
+    outline: none !important;
+    border-radius: 50% !important;
+    border-color: white;
+    transform: scale(1.15);
+}
+
+.accent-swatch.focused.selected {
+    border-color: white;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+.accent-reset {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.accent-reset.focused {
+    outline: none !important;
+    color: var(--text-primary);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+/* --- Settings Toggle Row (P15b) --- */
+.settings-toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 12px;
+    border-bottom: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.settings-toggle-row.focused {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    background: var(--accent-soft);
+    border-bottom-color: transparent;
+}
+
+.settings-toggle-label {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.settings-toggle-value {
+    font-size: 14px;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.settings-toggle-row.focused .settings-toggle-value {
+    color: var(--accent);
+}
+
+.settings-toggle-row.focused .settings-toggle-value::before {
+    content: "\25C4  ";
+    color: var(--accent);
+}
+
+.settings-toggle-row.focused .settings-toggle-value::after {
+    content: "  \25BA";
+    color: var(--accent);
+}
+
+.settings-toggle-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 10px;
+    line-height: 1.4;
+    padding: 0 12px;
+}
+
+/* --- V3.8: Libraries multi-select rows --- */
+.settings-libraries-list {
+    display: block;
+}
+
+.settings-library-row {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    border-radius: 8px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    will-change: transform, opacity;
+    transition: transform 0.12s ease, opacity 0.12s ease;
+}
+
+.settings-library-row.focused {
+    transform: scale(1.02);
+    background: var(--accent-soft);
+    border-bottom-color: transparent;
+}
+
+.settings-library-checkbox {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 2px solid var(--text-muted);
+    margin-right: 14px;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    background: transparent;
+}
+
+.settings-library-row.is-checked .settings-library-checkbox {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.settings-library-row.is-locked {
+    opacity: 0.55;
+}
+
+.settings-library-row.is-locked.focused {
+    transform: none;
+}
+
+.settings-library-name {
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.settings-libraries-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 10px;
+    line-height: 1.4;
+    padding: 0 12px;
+}
+
+/* --- P15c: Two-column Settings layout --- */
+.settings-layout {
+    display: flex;
+    height: 100%;
+    overflow: hidden;
+}
+
+.settings-left {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 40px; /* NOT flex gap — Chromium 63 */
+    padding-bottom: 20px;
+    min-height: 0;       /* allow flex child to scroll */
+    max-width: 720px;
+}
+
+.settings-right {
+    width: 280px;
+    flex-shrink: 0;
+    padding-top: 8px;
+}
+
+.settings-about {
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    padding: 20px 24px;
+    border: 1px solid var(--border);
+}
+
+.settings-about-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.settings-about-subtitle {
+    font-size: 13px;
+    color: var(--accent);
+    margin-bottom: 16px;
+}
+
+.settings-about-row {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.settings-about-row:last-child {
+    margin-bottom: 0;
+}
+
+/* ============================================
+   Loading Skeletons
+   ============================================ */
+@keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.25; }
+}
+
+.skeleton {
+    background: var(--bg-card);
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+    border-radius: 10px;
+}
+
+.skeleton-card {
+    border-radius: 10px;
+}
+
+.skeleton-song-row {
+    height: 56px;
+    margin-bottom: 4px;
+    border-radius: 8px;
+}
+
+.skeleton-grid-card {
+    padding-top: 100%;
+    border-radius: 10px;
+}
+
+/* ============================================
+   Album Art Component
+   ============================================ */
+.album-art {
+    overflow: hidden;
+    position: relative;
+    background: var(--bg-card);
+}
+
+.album-art img {
+    display: block;
+}
+
+/* Fill-parent mode (for grid layouts) */
+.album-art-fill {
+    width: 100%;
+    padding-top: 100%; /* 1:1 aspect ratio */
+}
+
+.album-art-fill > img,
+.album-art-fill > .art-placeholder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* Artist avatar */
+.artist-avatar {
+    overflow: hidden;
+    background: var(--bg-card);
+    border-radius: 50%;
+}
+
+/* ============================================
+   Home Screen
+   ============================================ */
+.home-screen {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 20px;
+    position: relative;
+}
+
+/* Hero Banner */
+.home-hero {
+    height: 280px;
+    border-radius: 16px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    padding: 40px;
+    position: relative;
+    margin-bottom: 12px;
+    background: var(--bg-primary);
+}
+
+.home-hero > * + * {
+    margin-left: 36px;
+}
+
+.home-hero-skeleton {
+    width: 100%;
+    height: 100%;
+    border-radius: 16px;
+}
+
+.home-hero-art {
+    flex-shrink: 0;
+    position: relative;
+}
+
+.home-hero-art .album-art {
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.hero-glow {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 320px;
+    height: 320px;
+    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.home-hero-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
+
+.home-hero-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 36px 44px;
+}
+
+.home-hero-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+.home-hero-title {
+    font-size: 34px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.home-hero-subtitle {
+    font-size: 18px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+}
+
+.home-hero-buttons {
+    display: flex;
+    margin-top: 20px;
+}
+
+.home-hero-buttons > * + * {
+    margin-left: 14px;
+}
+
+.hero-play-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 28px;
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    border-radius: 24px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    will-change: transform;
+}
+
+.hero-play-btn > * + * {
+    margin-left: 8px;
+}
+
+.hero-play-btn.focused {
+    outline: none !important;
+    transform: scale(1.06);
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.hero-shuffle-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 28px;
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    border-radius: 24px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    will-change: transform;
+}
+
+.hero-shuffle-btn > * + * {
+    margin-left: 8px;
+}
+
+.hero-shuffle-btn.focused {
+    outline: none !important;
+    transform: scale(1.06);
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* Sections */
+.home-section {
+    margin-bottom: 32px;
+}
+
+.home-section-heading {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--text-primary);
+    margin-bottom: 18px;
+}
+
+/* Horizontal scrolling row (V3-4: extra vertical padding so 1.08x
+   scaled cards don't clip; overflow-y stays visible). */
+.home-row {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding: 16px 16px 28px;
+    scroll-behavior: smooth;
+}
+
+.home-row > * + * {
+    margin-left: 18px;
+}
+
+.home-row::-webkit-scrollbar {
+    display: none;
+}
+
+/* Album Card (horizontal row) */
+.album-card {
+    flex-shrink: 0;
+    width: 162px;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+    /* V3-6: will-change applied dynamically to focused card only */
+    transform-origin: center center;
+    border-radius: 10px;
+    padding-bottom: 4px;
+    /* V3.8-fix2 (was V3-6-fix3 GFX-1 for grid cards): force the card
+       onto its own compositor layer at rest so the focused scale
+       doesn't briefly drop the border-radius clip on neighbouring
+       cards' cover art (Tizen 5.0 / Chromium 63 layer recomposition
+       artefact). */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+/* V3-4: scale-up focus, no border/outline/shadow on the card itself.
+   The enlarged card IS the focus indicator. */
+.album-card.focused {
+    outline: none !important;
+    box-shadow: none !important;
+    border-color: transparent !important;
+    /* V3.8-fix2: keep translateZ on focus so the focused state stays
+       on the same compositor layer as the at-rest state. */
+    transform: scale(1.08) translateZ(0);
+    z-index: 5;
+}
+
+/* Subtle lift on the cover when focused */
+.album-card.focused .album-art,
+.album-card.focused .album-card-art,
+.album-card.focused .album-art-fill {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.album-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.album-card-artist {
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+/* Playlist Card */
+.playlist-card {
+    flex-shrink: 0;
+    width: 230px;
+    min-height: 120px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+    /* V3-6: will-change applied dynamically */
+    transform-origin: center center;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+}
+
+/* V3-4: scale-up focus, no accent ring */
+.playlist-card.focused {
+    outline: none !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    border-color: var(--border) !important;
+    transform: scale(1.08);
+    z-index: 5;
+}
+
+.playlist-card-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.playlist-card-count {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* Empty + Error states */
+.home-empty {
+    padding: 24px;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.home-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: 24px;
+}
+
+.home-error-text {
+    color: var(--text-muted);
+    font-size: 16px;
+}
+
+/* ============================================
+   Library Screen (V3-3 — vertical pill sub-nav)
+   ============================================ */
+.library-screen {
+    display: flex;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Vertical pill sub-nav (left side, top-aligned with content grid) */
+.library-subnav {
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    background: rgba(30, 30, 38, 0.60);
+    border-radius: 20px;
+    padding: 6px;
+    z-index: 10;
+    width: 140px;
+    box-sizing: border-box;
+}
+
+.library-subnav-item {
+    position: relative;
+    z-index: 2;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.55);
+    border-radius: 16px;
+    text-align: center;
+    cursor: pointer;
+    font-family: inherit;
+    transition: color 0.15s ease;
+    margin: 2px 0;  /* NOT flex gap */
+}
+
+.library-subnav-item.focused {
+    color: white;
+    font-weight: 600;
+}
+
+.library-subnav-item.selected {
+    color: white;
+    font-weight: 600;
+}
+
+/* Sliding vertical pill */
+.library-subnav-pill {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    top: 0;
+    border-radius: 16px;
+    z-index: 1;
+    transition: transform 0.2s ease;
+    will-change: transform;
+    pointer-events: none;
+    background: transparent;
+}
+
+/* Focused = user is actively browsing the sub-nav = ACCENT */
+.library-subnav-pill.focused {
+    background: rgba(var(--accent-rgb), 0.55);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Selected = user has moved into content, sub-nav shows current tab = GREY */
+.library-subnav-pill.selected {
+    background: rgba(255, 255, 255, 0.15);
+    box-shadow: none;
+}
+
+/* Library content area (scrollable, cleared of the sub-nav) */
+.library-content {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 20px;
+    position: relative;
+    margin-left: 180px;  /* clear the 140px sub-nav + 40px breathing room */
+    transition: opacity 0.15s ease;
+    will-change: opacity;
+}
+
+.library-loading {
+    /* Wrapper for skeleton loaders */
+}
+
+/* Grid Layouts (V3-4: centred, with edge padding so scaled cards don't clip).
+   The library-content parent is already offset right of the sub-nav, so we
+   centre within that remaining column rather than page-centring. */
+.library-grid {
+    display: grid;
+    grid-gap: 22px;
+    /* 24px vertical padding keeps the top/bottom scaled cards from clipping
+       against the scroll viewport edge; 28px horizontal matches. */
+    padding: 24px 28px;
+    /* Required so scale transforms don't trigger a horizontal scrollbar */
+    overflow: visible;
+}
+
+.library-albums-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    grid-gap: 28px 20px;
+    justify-content: center;
+}
+
+.library-artists-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    grid-gap: 24px 16px;
+    justify-content: center;
+}
+
+/* V3-6-fix2 PERF-2: virtualised artists tab.
+   Mount wraps a tall spacer + an absolutely-positioned inner grid.
+   The inner grid keeps all the layout/styling rules. */
+.library-artists-virtual-mount {
+    position: relative;
+    padding: 24px 28px;
+    overflow: visible;
+}
+
+.library-genres-grid {
+    grid-template-columns: repeat(4, 1fr);
+    grid-gap: 24px 16px;
+    justify-content: center;
+}
+
+/* Album Grid Card (P7.5: consistent sizes) */
+.album-grid-card {
+    cursor: pointer;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+    /* V3-6: will-change applied dynamically to focused card only */
+    transform-origin: center center;
+    border-radius: 10px;
+    /* V3-4: `overflow: hidden` would clip the lift shadow, keep visible */
+    overflow: visible;
+    min-width: 0;
+    /* V3-6-fix3 GFX-1: force the card onto its own compositor layer at
+       rest so the focused scale doesn't double-rasterize the title text
+       on Tizen 5.0 (Chromium 63 glyph-cache "ghost" artefact). */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+.album-grid-card .album-art-fill {
+    width: 100%;
+    height: 0;
+    padding-top: 100%;
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+}
+
+.album-grid-card .album-art-fill > img,
+.album-grid-card .album-art-fill > .art-placeholder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* V3-4: scale-up focus + subtle lift shadow on the art */
+.album-grid-card.focused {
+    outline: none !important;
+    box-shadow: none !important;
+    border-color: transparent !important;
+    /* V3-6-fix3 GFX-1: keep translateZ so the focused state stays on the
+       same compositor layer as the at-rest state (prevents text ghosting). */
+    transform: scale(1.08) translateZ(0);
+    z-index: 5;
+}
+
+.album-grid-card.focused .album-art-fill {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.album-grid-info {
+    padding: 8px 2px 4px;
+}
+
+.album-grid-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.album-grid-meta {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+/* Artist Grid Card */
+.artist-grid-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 12px;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+    /* V3-6: will-change applied dynamically */
+    transform-origin: center center;
+    min-width: 0;
+    /* V3-4: allow lift shadow to extend past the card */
+    overflow: visible;
+    /* V3-6-fix3 GFX-1: dedicated compositor layer at rest — see album card */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+/* V3-4: scale-up focus, no border/outline */
+.artist-grid-card.focused {
+    outline: none !important;
+    box-shadow: none !important;
+    border-color: transparent !important;
+    /* V3-6-fix3 GFX-1: keep translateZ on focus to stay on the same layer */
+    transform: scale(1.08) translateZ(0);
+    z-index: 5;
+}
+
+.artist-grid-card.focused .artist-avatar {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.artist-grid-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-top: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.artist-grid-count {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* Song List (V3-4: padding so focused rows don't clip on scale(1.02)) */
+.library-song-list {
+    padding: 12px 28px 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.song-row {
+    display: flex;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.12s ease;
+    /* V3-6: will-change applied dynamically */
+    transform-origin: left center;
+}
+
+.song-row > * + * {
+    margin-left: 16px;
+}
+
+/* V3-6-fix GFX-4: focused songs match the top-nav pill (0.55). */
+.song-row.focused {
+    background: rgba(var(--accent-rgb), 0.55);
+    outline: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: scale(1.02);
+}
+
+.song-row.focused .song-row-title {
+    color: white;
+    font-weight: 600;
+}
+
+.song-row-number {
+    width: 28px;
+    text-align: right;
+    font-size: 14px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.song-row-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.song-row-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.song-row-meta {
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+.song-row-duration {
+    font-size: 14px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+/* V3-5: Genre card — gradient background (Apple Music style). Gradient
+   is set inline per-card from GENRE_GRADIENTS in library.js; no left
+   border, no dark card, just a bold colour block. */
+.genre-card {
+    min-height: 96px;
+    padding: 20px 18px;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    /* V3-6: will-change applied dynamically */
+    transform-origin: center center;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    position: relative;
+    overflow: hidden;
+}
+
+.genre-card.focused {
+    outline: none !important;
+    transform: scale(1.08);
+    z-index: 5;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.genre-card-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+}
+
+.genre-card-count {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.65);
+    margin-top: 2px;
+}
+
+/* Library pagination loading indicator */
+.library-loading-more {
+    text-align: center;
+    padding: 16px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+/* Library empty state */
+.library-empty {
+    text-align: center;
+    padding: 60px 24px;
+}
+
+/* Genre Songs Header */
+.genre-songs-header {
+    margin-bottom: 20px;
+}
+
+.genre-songs-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* ============================================
+   Album Detail Screen
+   ============================================ */
+.album-detail {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.album-detail-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.album-detail-left {
+    width: 200px;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.album-detail-art {
+    margin-bottom: 20px;
+}
+
+.album-detail-art .album-art {
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.album-detail-title {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+    line-height: 1.2;
+    word-wrap: break-word;
+}
+
+.album-detail-artist {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 8px;
+}
+
+.album-detail-meta {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+}
+
+.album-play-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* V3-6-fix GFX-3: inset by 8px each side so the rounded ends don't
+       clip against the left-panel edge. */
+    width: calc(100% - 16px);
+    margin-left: 8px;
+    margin-right: 8px;
+    box-sizing: border-box;
+    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    border-radius: 22px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    margin-bottom: 10px;
+    transition: transform 0.15s ease;
+    will-change: transform;
+    transform-origin: center center;
+}
+
+.album-play-btn > * + * {
+    margin-left: 8px;
+}
+
+.album-play-btn.focused {
+    outline: none !important;
+    transform: scale(1.04);
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.album-shuffle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* V3-6-fix GFX-3: inset by 8px each side. */
+    width: calc(100% - 16px);
+    margin-left: 8px;
+    margin-right: 8px;
+    box-sizing: border-box;
+    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    border-radius: 22px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    will-change: transform;
+    transform-origin: center center;
+}
+
+.album-shuffle-btn > * + * {
+    margin-left: 8px;
+}
+
+.album-shuffle-btn.focused {
+    outline: none !important;
+    transform: scale(1.04);
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* Tracklist — the ONLY scrollable area in album detail.
+   V3-4: padding-right gives focused rows (scale(1.02), transform-origin:
+   left center) room to grow rightward without being clipped by overflow-x:
+   hidden. */
+.album-detail-right {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-width: 0;
+    padding-bottom: 20px;
+    padding-right: 40px;
+    position: relative;
+    margin-left: 48px;
+}
+
+.album-tracklist-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.album-tracklist-duration {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+}
+
+.track-row {
+    display: flex;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.12s ease;
+    /* V3-6: will-change applied dynamically */
+    transform-origin: left center;
+}
+
+.track-row > * + * {
+    margin-left: 16px;
+}
+
+/* V3-6-fix GFX-4: focused tracks match the top-nav pill (0.55). */
+.track-row.focused {
+    background: rgba(var(--accent-rgb), 0.55);
+    outline: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: scale(1.02);
+}
+
+.track-row.focused .track-row-title {
+    color: white;
+    font-weight: 600;
+}
+
+.track-row-number {
+    width: 28px;
+    text-align: right;
+    font-size: 14px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.track-row-eq {
+    width: 28px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.track-row-eq > * + * {
+    margin-left: 2px;
+}
+
+.track-row-title {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.track-title-playing {
+    color: var(--accent);
+}
+
+.track-row-duration {
+    font-size: 14px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.album-detail-error {
+    padding: 48px 32px;
+    text-align: center;
+}
+
+/* ============================================
+   Search Screen
+   ============================================ */
+.search-screen {
+    display: flex;
+    height: 100%;
+    overflow: hidden;
+}
+
+.search-screen > * + * {
+    margin-left: 40px;
+}
+
+.search-left {
+    width: 35%;
+    min-width: 350px;
+    max-width: 500px;
+    flex-shrink: 0;
+}
+
+.search-heading {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 18px;
+}
+
+/* Search Input Bar */
+.search-input-bar {
+    display: flex;
+    align-items: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+}
+
+.search-input-bar > * + * {
+    margin-left: 12px;
+}
+
+.search-input-text {
+    font-size: 18px;
+    color: var(--text-muted);
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.search-input-text.has-text {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.search-clear-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    border-radius: 50%;
+    color: var(--text-secondary);
+    font-size: 18px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.search-clear-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-primary);
+}
+
+/* On-Screen Keyboard */
+.search-keyboard {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    grid-gap: 8px;
+}
+
+.kb-key {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    border: none;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 18px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 14px 0;
+    min-height: 48px;
+    transition: transform 0.12s ease;
+    /* V3-6: will-change applied dynamically (35+ keyboard keys visible) */
+}
+
+.kb-key.focused {
+    background: var(--accent);
+    color: white;
+    outline: none !important;
+    transform: scale(1.08);
+    z-index: 5;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.kb-space {
+    grid-column: span 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    border: none;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 14px 0;
+    min-height: 48px;
+    letter-spacing: 2px;
+    transition: transform 0.12s ease;
+    will-change: transform;
+}
+
+.kb-space.focused {
+    background: var(--accent);
+    color: white;
+    outline: none !important;
+    transform: scale(1.06);
+    z-index: 5;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.kb-spacer {
+    grid-column: span 2;
+}
+
+.kb-del {
+    grid-column: span 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.06);
+    border: none;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 14px 0;
+    min-height: 48px;
+    transition: transform 0.12s ease;
+    will-change: transform;
+}
+
+.kb-del.focused {
+    background: var(--accent);
+    color: white;
+    outline: none !important;
+    transform: scale(1.06);
+    z-index: 5;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* Search Right Panel */
+.search-right {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    padding-right: 32px;
+}
+
+.search-section-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+}
+
+/* Quick Access Grid */
+.search-quickaccess-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-gap: 12px;
+}
+
+/* V3-6-fix GFX-5: Quick Access tile — gradient block + label, mirrors the
+   Library → Genres tile style. Background gradient is set inline per-tile
+   from QA_ITEMS in search.js. */
+.search-qa-tile {
+    min-height: 96px;
+    padding: 20px 18px;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    /* V3-6: will-change applied dynamically */
+    transform-origin: center center;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    position: relative;
+    overflow: hidden;
+}
+
+.search-qa-tile.focused {
+    outline: none !important;
+    transform: scale(1.08);
+    z-index: 5;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.search-qa-tile-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+}
+
+/* Search Results List */
+.search-result-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.12s ease;
+    /* V3-6: will-change applied dynamically */
+    transform-origin: left center;
+}
+
+.search-result-item > * + * {
+    margin-left: 14px;
+}
+
+/* V3-6-fix GFX-4: focused search results match the top-nav pill (0.55). */
+.search-result-item.focused {
+    background: rgba(var(--accent-rgb), 0.55);
+    outline: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: scale(1.02);
+}
+
+.search-result-item.focused .search-result-title {
+    color: white;
+    font-weight: 600;
+}
+
+.search-result-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.search-result-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.search-result-meta {
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+.search-result-duration {
+    font-size: 14px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+    margin-left: 12px;
+}
+
+.search-no-results {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 24px;
+    color: var(--text-muted);
+    font-size: 14px;
+    text-align: center;
+}
+
+.search-loading {
+    /* Skeleton result rows */
+}
+
+.skeleton-result-row {
+    height: 72px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+}
+
+/* ============================================
+   Playlists Screen (Full Implementation)
+   ============================================ */
+.playlists-screen {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 20px;
+}
+
+.playlists-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-gap: 24px 18px;
+    justify-content: center;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px 28px;
+    overflow: visible;
+}
+
+.playlists-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 24px;
+    text-align: center;
+}
+
+.playlists-empty-icon {
+    width: 56px;
+    height: 56px;
+    fill: var(--text-muted);
+    opacity: 0.4;
+    margin-bottom: 20px;
+}
+
+.playlists-empty-text {
+    font-size: 16px;
+    color: var(--text-muted);
+}
+
+/* Playlist detail song list */
+.playlist-detail-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.playlist-detail-header > * + * {
+    margin-left: 16px;
+}
+
+.playlist-detail-info {
+    display: flex;
+    align-items: baseline;
+}
+
+.playlist-detail-info > * + * {
+    margin-left: 12px;
+}
+
+.playlist-detail-name {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.playlist-detail-count {
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+/* ============================================
+   Settings Screen (Enhanced)
+   ============================================ */
+.settings-playback-indicators {
+    display: flex;
+    margin-top: 4px;
+}
+
+.settings-playback-indicators > * + * {
+    margin-left: 12px;
+}
+
+.settings-indicator {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.settings-indicator > * + * {
+    margin-left: 6px;
+}
+
+.settings-indicator.active {
+    color: var(--accent);
+    border-color: rgba(var(--accent-rgb), 0.3);
+    background: var(--accent-soft);
+}
+
+.settings-indicator svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+}
+
+.settings-volume-bar {
+    display: flex;
+    align-items: center;
+    margin-top: 4px;
+}
+
+.settings-volume-bar > * + * {
+    margin-left: 10px;
+}
+
+.settings-volume-track {
+    width: 120px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.settings-volume-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+}
+
+.settings-volume-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Logout confirmation overlay */
+.settings-confirm-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(10, 10, 12, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.settings-confirm-dialog {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 360px;
+    text-align: center;
+}
+
+.settings-confirm-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+}
+
+.settings-confirm-message {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+    line-height: 1.5;
+}
+
+.settings-confirm-buttons {
+    display: flex;
+    justify-content: center;
+}
+
+.settings-confirm-buttons > * + * {
+    margin-left: 12px;
+}
+
+.settings-confirm-cancel {
+    padding: 10px 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    will-change: transform;
+}
+
+.settings-confirm-cancel.focused {
+    outline: none !important;
+    transform: scale(1.04);
+    background: var(--accent);
+    color: white;
+}
+
+.settings-confirm-logout {
+    padding: 10px 24px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 10px;
+    color: #ef4444;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    will-change: transform;
+}
+
+.settings-confirm-logout.focused {
+    outline: none !important;
+    transform: scale(1.04);
+    background: rgba(239, 68, 68, 0.25);
+}
+
+/* ============================================
+   Toast Notifications (V3-5: pill shape, slide-up entrance)
+   ============================================ */
+.sonance-toast {
+    position: fixed;
+    bottom: 196px; /* 76px NP bar + 28px hint bar + 92px spacing */
+    left: 50%;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    font-size: 14px;
+    font-family: inherit;
+    padding: 10px 22px;
+    border-radius: 24px;
+    z-index: 9000;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, 20px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    will-change: transform, opacity;
+}
+
+.sonance-toast.visible {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+/* ============================================
+   Colour Button Hint Bar
+   ============================================ */
+.colour-hint-bar {
+    height: 28px;
+    background: rgba(255, 255, 255, 0.03);
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.colour-hint-bar > * + * {
+    margin-left: 24px;
+}
+
+.colour-hint-bar.visible {
+    opacity: 1;
+}
+
+.colour-hint-item {
+    display: flex;
+    align-items: center;
+}
+
+.colour-hint-item > * + * {
+    margin-left: 6px;
+}
+
+.colour-hint-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.colour-hint-dot.red { background: #ef4444; }
+.colour-hint-dot.green { background: #22c55e; }
+.colour-hint-dot.yellow { background: #eab308; }
+.colour-hint-dot.blue { background: #3b82f6; }
+
+.colour-hint-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* ============================================
+   Exit Dialogue (P5.2)
+   ============================================ */
+.exit-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.exit-card {
+    background: rgba(30, 30, 38, 0.95);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+}
+
+.exit-card-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.exit-card-subtitle {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 28px;
+}
+
+.exit-card-buttons {
+    display: flex;
+    justify-content: center;
+}
+
+.exit-card-buttons > * + * {
+    margin-left: 12px;
+}
+
+.exit-btn {
+    padding: 10px 28px;
+    border: none;
+    border-radius: 24px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.8);
+    transition: transform 0.15s ease;
+    will-change: transform;
+}
+
+.exit-btn-cancel.focused,
+.exit-btn-exit.focused {
+    outline: none !important;
+    transform: scale(1.06);
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================
+   Now Playing Bar — opacity-based show/hide (V3-3 fix 5)
+   ============================================ */
+#now-playing-bar {
+    transition: opacity 0.2s ease;
+    will-change: opacity;
+    opacity: 1;
+}
+
+/* ============================================
+   Now Playing Fullbleed (P5.8) — NP screen fills the whole page layer
+   ============================================ */
+#page-current.fullbleed {
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+#page-current.fullbleed > * {
+    max-width: none !important;
+    margin: 0 !important;
+    height: 100%;
+}
+
+/* Now Playing active: zero padding, no scroll, fill completely (P6.2, P6.10, P7.1) */
+#page-current.np-active {
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+#page-current.np-active > * {
+    max-width: none !important;
+    margin: 0 !important;
+    height: 100%;
+}
+
+/* ============================================
+   Now Playing Lyrics Panel (P14b)
+   GPU-accelerated: only transform + opacity transitions.
+   Layout-triggering properties (width/padding/font-size)
+   snap instantly — never transitioned.
+   ============================================ */
+.np-layout {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+.np-left {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 480px;
+    max-width: 100%;
+    flex-shrink: 0;
+    padding: 20px;
+    box-sizing: border-box;
+    transform: translateX(0);
+    transition: transform 0.25s ease;
+    /* V3-6-fix4 PERF-4: will-change applied dynamically only during the
+       lyrics-panel open/close transition (see nowplaying.js). */
+}
+
+/* Slide .np-left from centred to the left column when lyrics open.
+   .np-layout is full-width. With .np-left at 480px centred,
+   shifting by 320px - 50vw positions it ~80px from the left edge. */
+.np-layout.lyrics-active .np-left {
+    transform: translateX(calc(320px - 50vw));
+}
+
+/* Album art + title/subtitle resize INSTANTLY (no transition on size).
+   The container sliding via translateX is what reads as motion. */
+.np-layout.lyrics-active .np-screen-art,
+.np-layout.lyrics-active .np-screen-art-inner {
+    width: 220px;
+    height: 220px;
+}
+
+.np-layout.lyrics-active .np-screen-title {
+    font-size: 22px;
+}
+
+.np-layout.lyrics-active .np-screen-subtitle {
+    font-size: 15px;
+}
+
+.np-lyrics-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 55%;
+    padding: 0 40px 0 48px;
+    box-sizing: border-box;
+    opacity: 0;
+    transform: translateX(100%);
+    transition: transform 0.25s ease, opacity 0.2s ease;
+    /* V3-6-fix4 PERF-4: will-change applied dynamically. */
+    overflow: hidden;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.np-layout.lyrics-active .np-lyrics-panel {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.np-lyrics-scroll-wrapper {
+    position: relative;
+    width: 100%;
+    height: 72%;
+    overflow: hidden;
+    /* V3-6-fix4 PERF-5 evaluation: a pseudo-element gradient overlay was
+       tried in place of mask-image but produced visible dark bars over the
+       blurred album-art backdrop (mask fades content; gradient overlays
+       paint flat colour over everything). Keeping mask-image preserves
+       the original "fade-text-over-bg" effect. The other PERF-1..4/6 wins
+       are more than enough; mask-image stays. */
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%);
+}
+
+.np-lyrics-lines {
+    /* V3-6-fix4 PERF-4: will-change applied dynamically while lyrics
+       panel is visible (see nowplaying.js). */
+    padding: 0;
+}
+
+/* All lines render at the same font-size. Active uses transform: scale()
+   instead of font-size change (font-size triggers layout every frame).
+   V3-6-fix5 FIX-3: font 18 → 36 px (visibly doubled). Long lines wrap
+   naturally inside the panel — do NOT add white-space: nowrap or
+   text-overflow: ellipsis here. */
+.lyrics-line {
+    padding: 14px 0;
+    line-height: 1.4;
+    font-size: 36px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.5);
+    opacity: 0.5;
+    transform: scale(1);
+    transform-origin: left center;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    /* V3-6: too many lines on screen — let the scrolling parent handle GPU
+       layering via its single will-change. */
+}
+
+.lyrics-line.lyrics-active {
+    color: #ffffff;
+    font-weight: 700;
+    opacity: 1;
+    transform: scale(1.15);
+}
+
+.lyrics-line.lyrics-upcoming {
+    color: rgba(255, 255, 255, 0.5);
+    opacity: 0.5;
+    transform: scale(1);
+}
+
+.lyrics-line.lyrics-past {
+    color: rgba(255, 255, 255, 0.25);
+    opacity: 0.25;
+    transform: scale(1);
+}
+
+.np-lyrics-empty {
+    color: var(--text-muted);
+    font-size: 16px;
+    font-style: italic;
+    text-align: center;
+    padding: 24px 0;
+}
+
+/* Lyrics button in transport controls */
+.np-ctrl-lyrics {
+    color: var(--text-secondary);
+}
+
+.np-ctrl-lyrics.focused {
+    color: var(--accent);
+}
+
+/* When the panel is open, indicate state with accent colour even unfocused */
+.np-ctrl-lyrics.is-active {
+    color: var(--accent);
+}
+
+/* Unavailable state: dim and not focusable */
+.np-ctrl-lyrics.is-unavailable {
+    display: none;
+}
+
+/* ============================================
+   Now Playing Blur Background (P5.3)
+   ============================================ */
+.np-bg-image {
+    position: absolute;
+    /* V3-6-fix: 25% overscan on every side guarantees the blurred image
+       fully covers the viewport regardless of the source image's aspect
+       ratio, so no black bars appear with landscape-cropped covers. */
+    top: -25%;
+    left: -25%;
+    width: 150%;
+    height: 150%;
+    background-size: cover;
+    background-position: center;
+    /* V3-6-fix: 60px blur (was 30px) — softer, more abstract backdrop. */
+    filter: blur(60px) saturate(1.3);
+    opacity: 0.6;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.np-bg-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(10, 10, 12, 0.55);
+    z-index: 1;
+    pointer-events: none;
+}
+
+
+/* ============================================
+   Stars (Favourites) — P13a
+   ============================================ */
+
+/* Album title + star row (left panel) */
+.album-detail-title-row {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 6px;
+}
+
+.album-detail-title-row > * + * {
+    margin-left: 10px;
+}
+
+.album-detail-title-row .album-detail-title {
+    flex: 1;
+    margin-bottom: 0;
+    min-width: 0;
+}
+
+.album-star-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    padding: 4px;
+    margin-top: 2px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: color 0.15s ease;
+}
+
+.album-star-btn svg {
+    display: block;
+}
+
+.album-star-btn.is-starred {
+    color: #ffffff;
+}
+
+.album-star-btn.focused {
+    outline: none !important;
+    color: var(--accent);
+    transform: none;
+    box-shadow: none;
+}
+
+/* Per-track star indicator (non-focusable, right before duration) */
+.track-row-star {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.track-row-star svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
+/* Show the star if the track is starred, OR if its row is focused */
+.track-row-star.is-starred {
+    opacity: 1;
+    color: #ffffff;
+}
+
+.track-row.focused .track-row-star {
+    opacity: 1;
+}
+
+.track-row.focused .track-row-star.is-starred {
+    color: var(--accent);
+}
+
+/* Now Playing transport star */
+.np-ctrl-star {
+    color: var(--text-secondary);
+}
+
+.np-ctrl-star.is-starred {
+    color: #ffffff;
+}
+
+.np-ctrl-star.is-starred svg {
+    fill: currentColor;
+}
+
+.np-ctrl-star.focused {
+    color: var(--accent);
+}
+
+
+/* ============================================
+   Artist Detail Screen — P13b
+   ============================================ */
+.artist-detail {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.artist-detail-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.artist-detail-left {
+    width: 220px;
+    flex-shrink: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+
+.artist-detail-photo {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    margin-bottom: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    background: var(--bg-card);
+}
+
+.artist-detail-photo > * {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 50% !important;
+}
+
+.artist-detail-name {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+    max-height: 56px;
+    overflow: hidden;
+    word-wrap: break-word;
+    width: 100%;
+}
+
+.artist-detail-count {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    margin-bottom: 24px;
+    width: 100%;
+}
+
+.artist-play-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: stretch;
+    /* V3-6-fix GFX-3: inset by 8px each side so the pill's rounded ends
+       sit comfortably inside the left panel. */
+    width: calc(100% - 16px);
+    margin-left: 8px;
+    margin-right: 8px;
+    box-sizing: border-box;
+    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    border-radius: 22px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    margin-bottom: 10px;
+    transition: transform 0.15s ease;
+    will-change: transform;
+    transform-origin: center center;
+}
+
+.artist-play-btn > * + * {
+    margin-left: 8px;
+}
+
+.artist-play-btn.focused {
+    outline: none !important;
+    transform: scale(1.04);
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.artist-play-btn:disabled,
+.artist-shuffle-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.artist-shuffle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: stretch;
+    /* V3-6-fix GFX-3: inset by 8px each side. */
+    width: calc(100% - 16px);
+    margin-left: 8px;
+    margin-right: 8px;
+    box-sizing: border-box;
+    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    border-radius: 22px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    will-change: transform;
+    transform-origin: center center;
+}
+
+.artist-shuffle-btn > * + * {
+    margin-left: 8px;
+}
+
+.artist-shuffle-btn.focused {
+    outline: none !important;
+    transform: scale(1.04);
+    background: var(--accent);
+    color: white;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* Right panel — scrollable */
+.artist-detail-right {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    min-width: 0;
+    padding-bottom: 24px;
+    margin-left: 48px;
+}
+
+.artist-section + .artist-section {
+    margin-top: 32px;
+}
+
+.artist-section-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+}
+
+.artist-section-bio .artist-section-label,
+.artist-section-similar .artist-section-label {
+    margin-bottom: 12px;
+}
+
+.artist-section-empty {
+    font-size: 14px;
+    color: var(--text-muted);
+    padding: 12px 0;
+}
+
+/* Discography rows */
+.artist-albums-list {
+    display: block;
+}
+
+.artist-album-row {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    border-radius: 10px;
+    cursor: pointer;
+    margin-bottom: 12px;
+    background: transparent;
+    border: 1px solid transparent;
+    transition: transform 0.12s ease;
+    /* V3-6: will-change applied dynamically */
+    transform-origin: left center;
+}
+
+/* V3-6-fix5 FIX-1: focus uses accent (matches song/track rows). */
+.artist-album-row.focused {
+    background: rgba(var(--accent-rgb), 0.55);
+    border-color: transparent !important;
+    outline: none !important;
+    box-shadow: none !important;
+    transform: scale(1.03);
+}
+
+.artist-album-row.focused .artist-album-art {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.artist-album-row.focused .artist-album-title {
+    color: white;
+}
+
+.artist-album-art {
+    flex-shrink: 0;
+}
+
+.artist-album-info {
+    flex: 1;
+    min-width: 0;
+    margin-left: 16px;
+}
+
+.artist-album-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.artist-album-meta {
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Biography */
+.artist-bio-text {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    max-width: 720px;
+}
+
+/* Similar Artists row */
+.artist-similar-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.artist-similar-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 96px;
+    margin-right: 20px;
+    margin-bottom: 16px;
+    padding: 6px;
+    border-radius: 10px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: transparent;
+    transition: transform 0.15s ease;
+    /* V3-6: will-change applied dynamically */
+    transform-origin: center center;
+}
+
+/* V3-6-fix5 FIX-1: focus uses accent (matches song/track rows). */
+.artist-similar-card.focused {
+    background: rgba(var(--accent-rgb), 0.55) !important;
+    border-color: transparent !important;
+    outline: none !important;
+    box-shadow: none !important;
+    transform: scale(1.08);
+    z-index: 5;
+}
+
+.artist-similar-card.focused .artist-similar-avatar {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    border-radius: 50%;
+}
+
+.artist-similar-avatar {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 8px;
+}
+
+.artist-similar-name {
+    font-size: 13px;
+    color: var(--text-primary);
+    text-align: center;
+    width: 100%;
+    max-height: 36px;
+    overflow: hidden;
+    line-height: 1.3;
+}
+
+/* Clickable artist name in album detail left panel */
+.album-detail-artist.focusable {
+    display: inline-block;
+    padding: 2px 6px;
+    margin-left: -6px;
+    background: transparent;
+    border: none;
+    font: inherit;
+    color: var(--accent);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.album-detail-artist.focusable.focused {
+    background: rgba(var(--accent-rgb), 0.15);
+    color: var(--accent);
+    outline: none;
+    transform: none;
+}
+
+/* Error state for artist detail */
+.artist-detail-error {
+    padding: 40px 0;
+}
