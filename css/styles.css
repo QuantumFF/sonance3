@@ -49,10 +49,15 @@
     --sp-lg: 32px;
     --sp-xl: 48px;
 
-    /* --- Focus ring (solid white border, GPU-composited via box-shadow so it
-       follows border-radius and triggers no layout reflow). No scale. --- */
+    /* --- Focus ring (solid white border). Drawn as a ::after overlay on the
+       focused element (see .focusable.focused::after) rather than a box-shadow:
+       a box-shadow ring renders outside the border box and gets clipped wherever
+       a focusable sits flush against an ancestor with overflow:hidden or at a
+       scroll-container edge (home grid, song lists, settings rows). The overlay
+       is a child painted on top (so it shows even over full-bleed cover art) and
+       lives inside the element, so no ancestor overflow can clip it. No scale,
+       no reflow. --- */
     --focus-ring-width: 3px;
-    --focus-ring: 0 0 0 var(--focus-ring-width) #ffffff;
 
     /* --- Card sizing (horizontal scroll rows) --- */
     --card-w: 210px;
@@ -142,22 +147,47 @@ html, body, #app {
     outline: none;
 }
 
-/* REDESIGN: one consistent focus style everywhere — a solid white ring
-   (box-shadow so it follows border-radius without reflow) and NO scale
-   transforms (Chromium 63 jitters on transformed focus). Focus movement is
-   instant: no transition on the ring. The !important overrides the legacy
-   per-card scale/shadow rules still present further down the file; those are
-   progressively removed per-screen. The sliding pill (nav + Library tab strip)
-   is exempt — those items do not carry the .focusable class. */
+/* REDESIGN: one consistent focus style everywhere — a solid white ring drawn
+   as a ::after overlay (see below) that follows border-radius, never reflows,
+   and is never clipped by an ancestor's overflow. NO scale transforms
+   (Chromium 63 jitters on transformed focus); focus movement is instant. The
+   sliding pill (nav + Library tab strip) is exempt — those items do not carry
+   the .focusable class. */
 .focusable {
     /* transitions defined per-class; keep no global `transition: all` */
+    /* Positioning context for the focus-ring overlay (::after below). Safe:
+       no focusable is position:absolute, and the fixed mini-player keeps its
+       own `position: fixed` (defined later, wins on source order). */
+    position: relative;
 }
 
 .focusable.focused {
-    box-shadow: var(--focus-ring) !important;
     transform: none !important;
     outline: none;
     z-index: 2;
+}
+
+/* The ring itself: a border drawn just inside the element's edges, on top of
+   all content (incl. full-bleed art), following the element's corner radius.
+   Uses top/right/bottom/left (not the `inset` shorthand) for Chromium 63. */
+.focusable.focused::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    border: var(--focus-ring-width) solid #ffffff;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 3;
+}
+
+/* Buttons that indicate focus with accent colour instead of a ring opt out of
+   the overlay (matches their existing `box-shadow: none` intent). */
+.np-ctrl-btn.focused::after,
+.album-star-btn.focused::after {
+    display: none;
 }
 
 /* --- V3-6: Lazy-loaded image fade-in ---
@@ -530,8 +560,12 @@ html, body, #app {
     box-sizing: border-box;
 }
 
-/* Centre the page content within the full 1920px width (max 1600px) */
-#page-current > * {
+/* Centre the page content within the full 1920px width (max 1600px).
+   The ghost is the demoted live layer (id cleared, class swapped to
+   .page-ghost during a transition) — it must keep the SAME centring so the
+   outgoing screen doesn't reflow to full width mid-crossfade. */
+#page-current > *,
+.page-ghost > * {
     max-width: 1600px;
     margin-left: auto;
     margin-right: auto;
@@ -547,6 +581,10 @@ html, body, #app {
     pointer-events: none;
     will-change: transform, opacity;
     z-index: 1;
+    /* Mirror .page-layer's box model so the ghost keeps the live layer's
+       padding (it loses the .page-layer class on demotion). */
+    padding: 28px 48px 20px;
+    box-sizing: border-box;
 }
 
 /* Centred page content wrapper */
@@ -741,15 +779,15 @@ html, body, #app {
 }
 
 .np-screen-art {
-    width: 300px;
-    height: 300px;
+    width: 400px;
+    height: 400px;
     margin-bottom: var(--sp-lg);
     position: relative;
 }
 
 .np-screen-art-inner {
-    width: 300px;
-    height: 300px;
+    width: 400px;
+    height: 400px;
     border-radius: 16px;
     overflow: hidden;
     box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
@@ -763,7 +801,7 @@ html, body, #app {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
+    max-width: 400px;
     margin-bottom: 6px;
 }
 
@@ -774,13 +812,14 @@ html, body, #app {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
+    max-width: 400px;
     margin-bottom: var(--sp-lg);
 }
 
 /* Progress bar */
 .np-screen-progress-wrap {
     width: 100%;
+    max-width: 400px;
     margin-bottom: 20px;
 }
 
@@ -1577,56 +1616,50 @@ html, body, #app {
     position: relative;
 }
 
-/* --- Full-bleed cinematic hero --- */
+/* --- Hero: sharp album cover left-aligned, details following --- */
 .home-hero {
     position: relative;
-    height: 420px;
-    border-radius: 0 0 20px 20px;
+    border-radius: 20px;
     overflow: hidden;
-    /* Bleed up into the page top padding and across the content column. */
-    margin: -28px -48px 28px;
+    margin: 0 0 28px;
+    padding: 36px 40px;
     background: var(--bg-primary);
+    display: flex;
+    align-items: center;
 }
 
 .home-hero-skeleton {
     width: 100%;
+    height: 280px;
+    border-radius: 20px;
+}
+
+.home-hero-cover {
+    flex-shrink: 0;
+    width: 240px;
+    height: 240px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg-elevated);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.home-hero-cover-img {
+    width: 100%;
     height: 100%;
-    border-radius: 0 0 20px 20px;
-}
-
-.home-hero-bg {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-size: cover;
-    background-position: center 30%;
-    z-index: 0;
-}
-
-/* Gradient fade from the album art into the content below + left vignette
-   so the lower-left text stays legible. */
-.home-hero-fade {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 1;
-    background:
-        linear-gradient(to top, var(--bg-main) 0%, rgba(0,0,0,0) 55%),
-        linear-gradient(to right, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0) 60%);
+    object-fit: cover;
+    display: block;
 }
 
 .home-hero-content {
-    position: absolute;
-    left: 56px;
-    bottom: 44px;
-    right: 56px;
-    z-index: 2;
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
+}
+
+.home-hero-cover + .home-hero-content {
+    margin-left: 40px;
 }
 
 .home-hero-label {
@@ -1895,6 +1928,7 @@ html, body, #app {
 }
 
 .library-tab.selected { color: #fff; }
+.library-tab.focused-tab { color: #fff; }
 
 .library-tab-pill {
     position: absolute;
@@ -2956,13 +2990,18 @@ html, body, #app {
    Colour Button Hint Bar
    ============================================ */
 .colour-hint-bar {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
     height: 40px;
-    background: rgba(255, 255, 255, 0.03);
-    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    padding: 0 24px;
+    background: rgba(var(--bg-elevated-rgb), 0.92);
+    border-radius: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
     opacity: 0;
     transition: opacity 0.2s ease;
     pointer-events: none;
@@ -3194,7 +3233,9 @@ html, body, #app {
 /* --- Up Next view (REDESIGN — numbered list w/ heading + durations) --- */
 .np-upnext-view {
     width: 100%;
-    height: 100%;
+    /* Shorter than the full pane so .np-right's vertical centring drops the
+       heading clear of the fixed top nav bar instead of sliding under it. */
+    height: 84%;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -3221,7 +3262,7 @@ html, body, #app {
 .np-upnext-row {
     display: flex;
     align-items: center;
-    padding: 8px 12px;
+    padding: 14px 16px;
     border-radius: 10px;
     cursor: pointer;
 }
@@ -3232,16 +3273,16 @@ html, body, #app {
 
 .np-upnext-index {
     flex-shrink: 0;
-    width: 28px;
+    width: 32px;
     text-align: center;
-    font-size: var(--fs-body);
+    font-size: 22px;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
 }
 
 .np-upnext-thumb {
-    width: 64px;
-    height: 64px;
+    width: 84px;
+    height: 84px;
     flex-shrink: 0;
     border-radius: 6px;
     overflow: hidden;
@@ -3254,7 +3295,7 @@ html, body, #app {
 }
 
 .np-upnext-title {
-    font-size: var(--fs-body);
+    font-size: 26px;
     color: var(--text-primary);
     font-weight: 600;
     white-space: nowrap;
@@ -3263,17 +3304,17 @@ html, body, #app {
 }
 
 .np-upnext-artist {
-    font-size: var(--fs-meta);
+    font-size: 18px;
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-top: 2px;
+    margin-top: 4px;
 }
 
 .np-upnext-duration {
     flex-shrink: 0;
-    font-size: var(--fs-meta);
+    font-size: 18px;
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
 }

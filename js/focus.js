@@ -219,6 +219,11 @@ var FocusManager = (function() {
         _activeZone = name;
         if (index !== undefined) {
             _focusIndex[name] = index;
+        } else if (typeof _zones[name].getEntryIndex === 'function') {
+            // Zone declares where focus should land when entered without an
+            // explicit index (e.g. a tab strip returns to its active tab).
+            var entryIdx = _zones[name].getEntryIndex();
+            if (typeof entryIdx === 'number' && entryIdx >= 0) _focusIndex[name] = entryIdx;
         }
         _updateFocus();
     }
@@ -441,7 +446,12 @@ var FocusManager = (function() {
 
         // Determine target index in neighbor zone
         var targetIdx;
-        if (neighborName === 'topnav') {
+        if (typeof neighbor.getEntryIndex === 'function') {
+            // Zone dictates its own entry index (e.g. tab strip → active tab),
+            // overriding the directional first/last default below.
+            var gi = neighbor.getEntryIndex(direction);
+            targetIdx = (typeof gi === 'number' && gi >= 0) ? gi : (_focusIndex[neighborName] || 0);
+        } else if (neighborName === 'topnav') {
             // Returning to the top nav: always land on the nav item that matches
             // the current primary screen (remembered index), not the last item.
             targetIdx = _focusIndex[neighborName] || 0;

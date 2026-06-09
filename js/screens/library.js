@@ -238,8 +238,63 @@ var LibraryScreen = (function() {
         }
     }
 
+    // The tab the highlight pill is currently previewing (may differ from the
+    // committed/active tab, which only changes on Enter/Down).
+    function _markTabFocused(index) {
+        var items = document.querySelectorAll('.library-tab');
+        for (var i = 0; i < items.length; i++) {
+            items[i].classList.toggle('focused-tab', i === index);
+        }
+    }
+
+    function _focusedTabIndex() {
+        var snap = FocusManager.snapshot ? FocusManager.snapshot() : null;
+        return (snap && snap.zone === 'library-tabs') ? snap.index : _tabIndex(_activeTab);
+    }
+
+    function _actionsHasVisible() {
+        var all = document.querySelectorAll('#library-actions .library-action');
+        for (var i = 0; i < all.length; i++) {
+            if (all[i].style.display !== 'none') return true;
+        }
+        return false;
+    }
+
+    // Park the highlight pill back on the active (committed) tab — used when
+    // focus leaves the strip without committing a different tab.
+    function _restTabPill() {
+        _setTabPillState('selected');
+        _updateTabPill(_tabIndex(_activeTab), false);
+        _markTabFocused(-1);
+    }
+
+    // Commit the focused tab: switch content if it differs from the active tab,
+    // then drop focus into the content grid once it's (re)registered. Reaching
+    // the right-side actions never commits a tab, so they stay contextual to
+    // whatever tab is active.
+    function _commitFocusedTab(idx) {
+        var key = LIBRARY_TABS[idx] ? LIBRARY_TABS[idx].key : _activeTab;
+        if (key === _activeTab) { _enterLibraryContent(); return; }
+        _genreMode = false;
+        _currentGenre = null;
+        // Reflect the new committed tab immediately (white label + parked pill),
+        // ahead of the async content load.
+        _markTabSelected(_tabIndex(key));
+        _setTabPillState('selected');
+        _updateTabPill(_tabIndex(key), true);
+        _markTabFocused(-1);
+        FocusManager.unregisterZone('library-grid');
+        _switchTabAnimated(key);
+        FocusManager.onceZoneRegistered('library-grid', function() {
+            if (_activeTab !== key) return;
+            if (FocusManager.getActiveZone() !== 'library-tabs') return;
+            FocusManager.setActiveZone('library-grid', 0, true);
+        });
+    }
+
     function _onTabItemClicked(tabKey) {
         FocusManager.setActiveZone('library-tabs', _tabIndex(tabKey), true);
+        _commitFocusedTab(_tabIndex(tabKey));
     }
 
     // =========================================
@@ -423,32 +478,31 @@ var LibraryScreen = (function() {
             selector: '.library-tab',
             columns: LIBRARY_TABS.length,
             defaultIndex: _tabIndex(_activeTab),
+            // Entering the strip (Up from content, Down from topnav, Left from
+            // the actions) always lands on the *active* tab — never the last one.
+            getEntryIndex: function() { return _tabIndex(_activeTab); },
             onFocus: function(idx) {
-                var newTab = LIBRARY_TABS[idx] ? LIBRARY_TABS[idx].key : _activeTab;
+                // Move the highlight pill to the focused tab as a preview only.
+                // Content is NOT switched here — it commits on Enter/Down, which
+                // keeps the right-side actions reachable without changing tab.
                 _setTabPillState('focused');
                 _updateTabPill(idx, true);
-                _markTabSelected(idx);
-                if (newTab !== _activeTab) {
-                    _genreMode = false;
-                    _currentGenre = null;
-                    _switchTabAnimated(newTab);
-                }
+                _markTabFocused(idx);
             },
-            onActivate: function() { _enterLibraryContent(); },
+            onActivate: function(idx) { _commitFocusedTab(idx); },
             onKey: function(direction) {
-                var idx = _tabIndex(_activeTab);
                 if (direction === 'up') {
-                    _setTabPillState('selected');
+                    _restTabPill();
                     FocusManager.setActiveZone('topnav', undefined, true);
                     return true;
                 }
                 if (direction === 'down') {
-                    _enterLibraryContent();
+                    _commitFocusedTab(_focusedTabIndex());
                     return true;
                 }
-                if (direction === 'right' && idx === LIBRARY_TABS.length - 1) {
-                    if (FocusManager.hasZone('library-actions')) {
-                        _setTabPillState('selected');
+                if (direction === 'right' && _focusedTabIndex() === LIBRARY_TABS.length - 1) {
+                    if (FocusManager.hasZone('library-actions') && _actionsHasVisible()) {
+                        _restTabPill();
                         FocusManager.setActiveZone('library-actions', 0, true);
                         return true;
                     }
@@ -489,7 +543,7 @@ var LibraryScreen = (function() {
     }
 
     function _enterLibraryContent() {
-        _setTabPillState('selected');
+        _restTabPill();
         var targetZone = FocusManager.hasZone('library-grid') ? 'library-grid' : null;
         if (targetZone) FocusManager.setActiveZone(targetZone, 0, true);
     }

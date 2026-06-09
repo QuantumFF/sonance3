@@ -178,13 +178,17 @@ var HomeScreen = (function() {
         var album = _heroAlbum;
         var coverId = album.coverArt || album.id;
 
-        // Background image bleeds across the top; gradient fades into content.
-        var bg = el('div', { className: 'home-hero-bg' });
+        // Sharp album cover, left-aligned, with the details following it.
+        var cover = el('div', { className: 'home-hero-cover' });
         if (coverId && typeof ImageCache !== 'undefined') {
-            bg.style.backgroundImage = 'url("' + ImageCache.getUrl(coverId, 600) + '")';
+            var coverImg = el('img', {
+                className: 'home-hero-cover-img',
+                src: ImageCache.getUrl(coverId, 600),
+                alt: album.name || album.title || 'Album cover'
+            });
+            cover.appendChild(coverImg);
         }
-        heroContainer.appendChild(bg);
-        heroContainer.appendChild(el('div', { className: 'home-hero-fade' }));
+        heroContainer.appendChild(cover);
 
         var info = el('div', { className: 'home-hero-content' });
         info.appendChild(el('div', { className: 'home-hero-label' }, 'LATEST ADDITION'));
