@@ -196,13 +196,12 @@ var App = (function() {
         artist: 'Artist'
     };
 
-    // v3 top nav order: Home | Library | Playlists | Queue | Now Playing | Search | Settings
+    // REDESIGN top nav: 4 items only — Home | Library | Search | Settings.
+    // Playlists folded into Library (5th tab); Queue & Now Playing reached via
+    // the top-left mini player.
     var NAV_ITEMS = [
         { id: 'home',       label: 'Home',        type: 'text' },
         { id: 'library',    label: 'Library',     type: 'text' },
-        { id: 'playlists',  label: 'Playlists',   type: 'text' },
-        { id: 'queue',      label: 'Queue',       type: 'text' },
-        { id: 'nowplaying', label: 'Now Playing', type: 'text' },
         { id: 'search',     label: null,          type: 'icon', icon: 'search' },
         { id: 'settings',   label: null,          type: 'icon', icon: 'settings' }
     ];
@@ -297,6 +296,46 @@ var App = (function() {
 
     // Apply saved accent immediately so nothing paints with stale pink
     loadAccentColor();
+
+    // =========================================
+    //  Background Theme (REDESIGN)
+    //  Separate from accent. Sets <html data-theme="…"> which swaps the
+    //  derived background/border CSS vars (see :root + [data-theme] in CSS).
+    //  Dark variations only. Ships: oled (default) | grey | navy | charcoal.
+    // =========================================
+
+    var DEFAULT_THEME = 'oled';
+    var THEMES = ['oled', 'grey', 'navy', 'charcoal'];
+
+    function applyTheme(theme) {
+        if (THEMES.indexOf(theme) < 0) theme = DEFAULT_THEME;
+        document.documentElement.setAttribute('data-theme', theme);
+    }
+
+    function loadTheme() {
+        var saved = DEFAULT_THEME;
+        try {
+            saved = localStorage.getItem('sonance-theme') || DEFAULT_THEME;
+        } catch (e) {}
+        applyTheme(saved);
+    }
+
+    function saveTheme(theme) {
+        if (THEMES.indexOf(theme) < 0) theme = DEFAULT_THEME;
+        try {
+            localStorage.setItem('sonance-theme', theme);
+        } catch (e) {
+            log('App', 'Failed to save theme: ' + e.message);
+        }
+        applyTheme(theme);
+    }
+
+    function getTheme() {
+        return document.documentElement.getAttribute('data-theme') || DEFAULT_THEME;
+    }
+
+    // Apply saved theme immediately so the first paint is correct.
+    loadTheme();
 
     // =========================================
     //  Init
@@ -723,10 +762,9 @@ var App = (function() {
         // V3-6-fix NAV-3: library-grid is preferred over library-subnav so
         // Down from the top nav lands on the first grid tile, not the side
         // sub-nav. The sub-nav is reachable via Left from the grid.
-        // V3-6-fix3 NAV-1: 'queue-list' is preferred over 'queue-card' so
-        // Down from the topnav lands on the first queue row when there are
-        // items; 'queue-card' is the empty-queue fallback.
-        var candidates = ['content', 'library-grid', 'library-subnav', 'queue-list', 'queue-card', 'search-results', 'album-tracks', 'np-controls'];
+        // REDESIGN: the Queue screen is a single full-width list ('queue-list');
+        // the old 'queue-card' now-playing card was removed.
+        var candidates = ['content', 'library-tabs', 'library-grid', 'queue-list', 'search-results', 'album-tracks', 'np-controls'];
         for (var i = 0; i < candidates.length; i++) {
             if (FocusManager.hasZone(candidates[i])) return candidates[i];
         }
@@ -737,81 +775,50 @@ var App = (function() {
     //  Now Playing Bar (Live)
     // =========================================
 
-    // References for live updates
+    // References for live updates (top-left mini player)
     var _npBarArt = null;
     var _npBarTitle = null;
     var _npBarArtist = null;
     var _npBarMiniProgress = null;
-    var _npBarPlayBtn = null;
+    var _npBarStatusIcon = null;   // play/pause indicator (not a control)
 
+    // REDESIGN: the fixed bottom now-playing bar is gone. This builds the
+    // top-left MINI PLAYER: small album art + title + artist + a play/pause
+    // indicator + a thin progress bar along the bottom edge. No transport
+    // controls (the remote hardware handles play/pause/prev/next). It is
+    // focusable; Enter opens the Now Playing fullscreen. The focus zone is
+    // still named 'nowplaying-bar' so the persistent-zone plumbing in
+    // focus.js / goBack continues to apply.
     function _buildNowPlayingBar() {
-        var npBar = el('div', { className: 'now-playing-bar', id: 'now-playing-bar' });
-
-        // Initial state — no track, bar hidden. updateNpBarVisibility will
-        // adjust once playback starts or the user navigates.
-        npBar.style.opacity = '0';
-        npBar.style.pointerEvents = 'none';
-
-        // Mini progress line at top (GPU-safe scaleX)
-        _npBarMiniProgress = el('div', { className: 'mini-progress' });
-        _npBarMiniProgress.style.setProperty('--progress', '0');
-        npBar.appendChild(_npBarMiniProgress);
-
-        // Left: album art + track info (clickable to open Now Playing screen)
-        var npLeft = el('div', { className: 'now-playing-bar-left' });
-        npLeft.style.cursor = 'pointer';
-        npLeft.addEventListener('click', function() {
-            if (Player.getState().currentTrack) {
-                navigateTo('nowplaying');
-            }
+        var mp = el('div', { className: 'mini-player focusable', id: 'mini-player' });
+        mp.style.cursor = 'pointer';
+        mp.addEventListener('click', function() {
+            if (Player.getState().currentTrack) navigateTo('nowplaying');
         });
 
-        _npBarArt = el('div', { className: 'now-playing-bar-art' });
-        npLeft.appendChild(_npBarArt);
+        _npBarArt = el('div', { className: 'mini-player-art' });
+        mp.appendChild(_npBarArt);
 
-        var npInfo = el('div', { className: 'now-playing-bar-info' });
-        _npBarTitle = el('div', { className: 'now-playing-bar-title' }, 'No track playing');
-        _npBarArtist = el('div', { className: 'now-playing-bar-artist' }, 'Select a song to begin');
-        npInfo.appendChild(_npBarTitle);
-        npInfo.appendChild(_npBarArtist);
-        npLeft.appendChild(npInfo);
-        npBar.appendChild(npLeft);
+        var info = el('div', { className: 'mini-player-info' });
+        _npBarTitle = el('div', { className: 'mini-player-title' }, 'Nothing playing');
+        _npBarArtist = el('div', { className: 'mini-player-artist' }, '—');
+        info.appendChild(_npBarTitle);
+        info.appendChild(_npBarArtist);
+        mp.appendChild(info);
 
-        // Centre: transport controls
-        var npCenter = el('div', { className: 'now-playing-bar-center' });
+        // Play/pause indicator (status only — not a button)
+        _npBarStatusIcon = el('div', { className: 'mini-player-status' });
+        mp.appendChild(_npBarStatusIcon);
 
-        var prevBtn = el('button', { className: 'np-bar-btn' });
-        var prevSvg = createSvg(SVG_PATHS.skipPrev);
-        prevSvg.style.width = '20px';
-        prevSvg.style.height = '20px';
-        prevSvg.style.fill = 'currentColor';
-        prevBtn.appendChild(prevSvg);
-        prevBtn.addEventListener('click', function() { Player.previous(); });
-        npCenter.appendChild(prevBtn);
-
-        _npBarPlayBtn = el('button', { className: 'play-btn-main np-bar-btn' });
-        var playSvg = createSvg(SVG_PATHS.play);
-        playSvg.style.width = '18px';
-        playSvg.style.height = '18px';
-        _npBarPlayBtn.appendChild(playSvg);
-        _npBarPlayBtn.addEventListener('click', function() { Player.togglePlayPause(); });
-        npCenter.appendChild(_npBarPlayBtn);
-
-        var nextBtn = el('button', { className: 'np-bar-btn' });
-        var nextSvg = createSvg(SVG_PATHS.skipNext);
-        nextSvg.style.width = '20px';
-        nextSvg.style.height = '20px';
-        nextSvg.style.fill = 'currentColor';
-        nextBtn.appendChild(nextSvg);
-        nextBtn.addEventListener('click', function() { Player.next(); });
-        npCenter.appendChild(nextBtn);
-
-        npBar.appendChild(npCenter);
+        // Thin progress bar along the bottom edge (GPU-safe scaleX)
+        _npBarMiniProgress = el('div', { className: 'mini-progress' });
+        _npBarMiniProgress.style.setProperty('--progress', '0');
+        mp.appendChild(_npBarMiniProgress);
 
         // Subscribe to player events
         _subscribeNowPlayingBar();
 
-        return npBar;
+        return mp;
     }
 
     // V3-5: preload the NP-sized cover art the moment the track changes.
@@ -892,28 +899,26 @@ var App = (function() {
         });
     }
 
-    // Show the NP bar only when a track is loaded AND the user is not on the
-    // Now Playing screen (which replaces the bar). Opacity transition is
-    // GPU-composited; page-container bottom snaps instantly via `no-np-bar`.
+    // REDESIGN: the mini player is permanent chrome (top-left). It is hidden
+    // only on the Now Playing fullscreen (redundant there). When no track is
+    // loaded it shows a dimmed idle state and is not interactive.
     function _updateNpBarVisibility() {
-        var bar = document.getElementById('now-playing-bar');
-        if (!bar) return;
+        var mp = document.getElementById('mini-player');
+        if (!mp) return;
 
         var state = Player.getState();
         var hasTrack = !!(state && state.currentTrack);
         var onNpScreen = _currentScreen === 'nowplaying';
-        var shouldShow = hasTrack && !onNpScreen;
 
-        if (shouldShow) {
-            bar.style.display = '';
-            bar.style.opacity = '1';
-            bar.style.pointerEvents = 'auto';
-            _setNpBarCollapsed(false);
-        } else {
-            bar.style.opacity = '0';
-            bar.style.pointerEvents = 'none';
-            _setNpBarCollapsed(true);
+        if (onNpScreen) {
+            mp.style.opacity = '0';
+            mp.style.pointerEvents = 'none';
+            return;
         }
+
+        mp.style.opacity = '1';
+        mp.style.pointerEvents = hasTrack ? 'auto' : 'none';
+        mp.classList.toggle('mini-player-idle', !hasTrack);
     }
 
     function _updateNpBarTrack(track) {
@@ -950,12 +955,13 @@ var App = (function() {
     }
 
     function _updateNpBarPlayIcon(isPlaying) {
-        if (!_npBarPlayBtn) return;
-        _npBarPlayBtn.textContent = '';
+        if (!_npBarStatusIcon) return;
+        _npBarStatusIcon.textContent = '';
         var icon = createSvg(isPlaying ? SVG_PATHS.pause : SVG_PATHS.play);
-        icon.style.width = '18px';
-        icon.style.height = '18px';
-        _npBarPlayBtn.appendChild(icon);
+        icon.style.width = '28px';
+        icon.style.height = '28px';
+        icon.style.fill = 'currentColor';
+        _npBarStatusIcon.appendChild(icon);
     }
 
     // =========================================
@@ -1030,6 +1036,16 @@ var App = (function() {
                     }
                     return true;
                 }
+                if (direction === 'left' && _navIndex === 0) {
+                    // Far-left of the centred nav → step onto the top-left mini
+                    // player (only when a track is loaded; otherwise wrap).
+                    if (FocusManager.hasZone('nowplaying-bar') && Player.getState().currentTrack) {
+                        FocusManager.setActiveZone('nowplaying-bar', 0, true);
+                        _setPillState('selected');
+                        _updateNavItemClasses();
+                        return true;
+                    }
+                }
                 if (direction === 'left' || direction === 'right') {
                     // User is actively browsing — restart the auto-hide timer on NP.
                     if (_currentScreen === 'nowplaying') _scheduleNavAutoHide();
@@ -1060,16 +1076,29 @@ var App = (function() {
 
     function _registerNowPlayingBarZone() {
         FocusManager.registerZone('nowplaying-bar', {
-            selector: '.np-bar-btn',
-            columns: 3,
-            onActivate: function(index) {
-                if (index === 0) Player.previous();
-                else if (index === 1) Player.togglePlayPause();
-                else if (index === 2) Player.next();
+            selector: '.mini-player',
+            columns: 1,
+            onActivate: function() {
+                // Enter on the mini player → open Now Playing fullscreen.
+                if (Player.getState().currentTrack) navigateTo('nowplaying');
             },
-            neighbors: {
-                up: 'topnav'
-            }
+            onKey: function(direction) {
+                // The mini player sits top-left, beside the centred nav. Right
+                // and Up return to the nav; Down drops into page content.
+                if (direction === 'right' || direction === 'up') {
+                    FocusManager.setActiveZone('topnav', _navIndex, true);
+                    _setPillState('focused');
+                    _updateNavItemClasses();
+                    return true;
+                }
+                if (direction === 'down') {
+                    var zone = _getPageFirstZone();
+                    if (zone) FocusManager.setActiveZone(zone, undefined, true);
+                    return true;
+                }
+                return false; // left: nothing further left
+            },
+            neighbors: {}
         });
     }
 
@@ -1406,29 +1435,35 @@ var App = (function() {
      * exits to the other. Matches v2 behaviour.
      */
     function _applySlideTransition(transition, ghost) {
-        var slideOut = transition === 'slide-left' ? -60 : 60;
-        var slideIn  = transition === 'slide-left' ?  60 : -60;
+        // REDESIGN: crossfade only — opacity-based, GPU-composited, no
+        // directional slide. transition arg is ignored (kept for callers).
+        _applyCrossfade(ghost);
+    }
 
+    /**
+     * REDESIGN screen transition: a pure opacity crossfade (~220ms). The
+     * outgoing ghost fades out while the incoming live layer fades in. Only
+     * `opacity` is touched so the Tizen GPU composites it cleanly — no
+     * transforms (Chromium 63 jitter) and no directional motion.
+     */
+    function _applyCrossfade(ghost) {
         _pageCurrent.style.transition = 'none';
-        _pageCurrent.style.transform = 'translateX(' + slideIn + 'px)';
         _pageCurrent.style.opacity = '0';
-        _pageCurrent.style.willChange = 'transform, opacity';
+        _pageCurrent.style.willChange = 'opacity';
 
         if (ghost) {
             ghost.style.transition = 'none';
-            ghost.style.transform = 'translateX(0)';
             ghost.style.opacity = '1';
+            ghost.style.willChange = 'opacity';
         }
 
         void _pageCurrent.offsetHeight;
 
-        _pageCurrent.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
-        _pageCurrent.style.transform = 'translateX(0)';
+        _pageCurrent.style.transition = 'opacity var(--xfade) ease';
         _pageCurrent.style.opacity = '1';
 
         if (ghost) {
-            ghost.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
-            ghost.style.transform = 'translateX(' + slideOut + 'px)';
+            ghost.style.transition = 'opacity var(--xfade) ease';
             ghost.style.opacity = '0';
             setTimeout(function() {
                 if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
@@ -1438,7 +1473,6 @@ var App = (function() {
         setTimeout(function() {
             if (_pageCurrent) {
                 _pageCurrent.style.transition = '';
-                _pageCurrent.style.transform = '';
                 _pageCurrent.style.opacity = '';
                 _pageCurrent.style.willChange = '';
             }
@@ -1455,52 +1489,8 @@ var App = (function() {
      * by the Tizen 5.0 Chromium target.
      */
     function _applyZoomTransition(direction, ghost) {
-        var incomingFromScale = direction === 'in' ? 0.92 : 1.08;
-        var outgoingToScale   = direction === 'in' ? 1.08 : 0.92;
-
-        // Incoming page: start scaled, transparent, no transition
-        _pageCurrent.style.transition = 'none';
-        _pageCurrent.style.transform = 'scale(' + incomingFromScale + ')';
-        _pageCurrent.style.opacity = '0';
-        _pageCurrent.style.willChange = 'transform, opacity';
-
-        // Ghost (outgoing): neutral start, then animates out
-        if (ghost) {
-            ghost.style.transition = 'none';
-            ghost.style.transform = 'scale(1)';
-            ghost.style.opacity = '1';
-            ghost.style.willChange = 'transform, opacity';
-        }
-
-        // Commit initial styles
-        void _pageCurrent.offsetHeight;
-
-        // Incoming animates to neutral
-        _pageCurrent.style.transition = 'transform 0.25s ease, opacity 0.25s ease';
-        _pageCurrent.style.transform = 'scale(1)';
-        _pageCurrent.style.opacity = '1';
-
-        // Ghost fades/scales out. Slightly faster opacity so the outgoing page
-        // clears before the incoming settles (matches the spec's 0.2s opacity
-        // window vs 0.25s transform).
-        if (ghost) {
-            var ghostDuration = direction === 'in' ? '0.25s' : '0.2s';
-            ghost.style.transition = 'transform ' + ghostDuration + ' ease, opacity 0.2s ease';
-            ghost.style.transform = 'scale(' + outgoingToScale + ')';
-            ghost.style.opacity = '0';
-            setTimeout(function() {
-                if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
-            }, 280);
-        }
-
-        setTimeout(function() {
-            if (_pageCurrent) {
-                _pageCurrent.style.transition = '';
-                _pageCurrent.style.transform = '';
-                _pageCurrent.style.opacity = '';
-                _pageCurrent.style.willChange = '';
-            }
-        }, 290);
+        // REDESIGN: drill-down/back also crossfades — no zoom scale.
+        _applyCrossfade(ghost);
     }
 
     /**
@@ -1897,6 +1887,12 @@ var App = (function() {
         getAccentRgb: getAccentRgb,
         DEFAULT_ACCENT_HEX: DEFAULT_ACCENT_HEX,
         DEFAULT_ACCENT_RGB: DEFAULT_ACCENT_RGB,
+        // REDESIGN: background theme selector
+        applyTheme: applyTheme,
+        saveTheme: saveTheme,
+        getTheme: getTheme,
+        THEMES: THEMES,
+        DEFAULT_THEME: DEFAULT_THEME,
         // V3.8 event bus + library-change orchestrator
         on: on,
         off: off,

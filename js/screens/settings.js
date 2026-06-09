@@ -17,6 +17,16 @@ var SettingsScreen = (function() {
     // < 2 entries the Libraries section stays unrendered.
     var _allLibraries = null;
 
+    // Background theme presets (REDESIGN). Separate from accent. The preview
+    // square uses each theme's --bg-card so the swatch reads as that theme's
+    // surface colour. Ids must match App.THEMES.
+    var THEME_PRESETS = [
+        { id: 'oled',     name: 'OLED Black',    preview: '#1a1a22' },
+        { id: 'grey',     name: 'Dark Grey',     preview: '#26262b' },
+        { id: 'navy',     name: 'Navy',          preview: '#18223a' },
+        { id: 'charcoal', name: 'Charcoal Warm', preview: '#28241f' }
+    ];
+
     // Accent colour presets (P14e)
     var ACCENT_PRESETS = [
         { name: 'Pink',   hex: '#e44d8a', rgb: '228, 77, 138' },
@@ -91,9 +101,33 @@ var SettingsScreen = (function() {
         librariesSection.style.display = 'none';
         content.appendChild(librariesSection);
 
-        // --- Appearance (P14e) ---
+        // --- Appearance (P14e) — order: Theme → Accent → Reset (REDESIGN) ---
         var appearanceSection = el('div', { className: 'settings-section', id: 'settings-appearance' });
         appearanceSection.appendChild(el('div', { className: 'settings-section-title' }, 'Appearance'));
+
+        // Theme selector (REDESIGN — background themes, separate from accent).
+        var themePickerRow = el('div', { className: 'theme-picker-row' });
+        themePickerRow.appendChild(el('div', { className: 'accent-picker-label' }, 'Theme'));
+
+        var themeList = el('div', { className: 'theme-list', id: 'settings-theme-list' });
+        var currentTheme = App.getTheme();
+        THEME_PRESETS.forEach(function(t) {
+            var row = el('div', {
+                className: 'theme-row focusable' + (t.id === currentTheme ? ' is-selected' : ''),
+                'data-theme-id': t.id
+            });
+            var sw = el('span', { className: 'theme-row-swatch' });
+            sw.style.backgroundColor = t.preview;
+            row.appendChild(sw);
+            row.appendChild(el('span', { className: 'theme-row-name' }, t.name));
+            row.appendChild(el('span', { className: 'theme-row-check' }, '✓'));
+            row.addEventListener('click', function() {
+                _selectTheme(t.id);
+            });
+            themeList.appendChild(row);
+        });
+        themePickerRow.appendChild(themeList);
+        appearanceSection.appendChild(themePickerRow);
 
         var pickerRow = el('div', { className: 'accent-picker-row' });
         pickerRow.appendChild(el('div', { className: 'accent-picker-label' }, 'Accent Colour'));
@@ -223,6 +257,25 @@ var SettingsScreen = (function() {
                 sw.classList.remove('selected');
             }
         }
+    }
+
+    function _updateSelectedThemeRow(themeId) {
+        var rows = document.querySelectorAll('#settings-theme-list .theme-row');
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i];
+            if (row.getAttribute('data-theme-id') === themeId) {
+                row.classList.add('is-selected');
+            } else {
+                row.classList.remove('is-selected');
+            }
+        }
+    }
+
+    function _selectTheme(themeId) {
+        App.saveTheme(themeId);
+        _updateSelectedThemeRow(themeId);
+        App.showToast('Theme updated');
+        log('Settings', 'Theme set to ' + themeId);
     }
 
     function _selectAccent(hex, rgb) {
@@ -358,27 +411,48 @@ var SettingsScreen = (function() {
     function _registerStaticZones() {
         var hasLibraries = _allLibraries && _allLibraries.length >= 2;
 
-        // Content (top) zone: horizontal row of 8 accent swatches.
-        // Registered as 'content' — top nav → down lands on the swatches.
+        // REDESIGN: navigation runs top-to-bottom matching the DOM order:
+        //   Theme rows  →  Accent swatches  →  Actions (reset / auto-NP / logout)
+        // The Theme list is the 'content' entry zone, so Down from the top nav
+        // lands on it (the topmost Appearance control). Up from Theme reaches
+        // the Libraries section when present.
+
+        // Theme rows (vertical list of 4).
         FocusManager.registerZone('content', {
-            selector: '#settings-appearance .accent-swatch.focusable',
-            columns: 8,
+            selector: '#settings-theme-list .theme-row.focusable',
+            columns: 1,
             onActivate: function(index, element) {
-                if (element && element.click) {
-                    element.click();
-                }
+                if (element && element.click) element.click();
             },
             onFocus: function(idx, element) { _scrollFocusedIntoView(element); },
             neighbors: {
                 left: 'topnav',
                 up: hasLibraries ? 'settings-libraries' : 'topnav',
+                down: 'settings-accent'
+            }
+        });
+
+        // Accent swatches (horizontal row of 8).
+        FocusManager.registerZone('settings-accent', {
+            selector: '#settings-appearance .accent-swatch.focusable',
+            columns: 8,
+            onActivate: function(index, element) {
+                if (element && element.click) element.click();
+            },
+            onFocus: function(idx, element) { _scrollFocusedIntoView(element); },
+            neighbors: {
+                left: 'topnav',
+                up: 'content',
                 down: 'settings-actions'
             }
         });
 
-        // Actions zone: reset link + toggle rows + logout button (below swatches)
+        // Actions zone: reset link + toggle rows + logout button. Excludes the
+        // accent swatches, library rows and theme rows (each their own zone).
+        // V3.8-fix: the selector was '#content-area …' but no element has that
+        // id (the page layer is #page-current); scope it to #settings-left.
         FocusManager.registerZone('settings-actions', {
-            selector: '#content-area .focusable:not(.accent-swatch):not(.settings-library-row)',
+            selector: '#settings-left .focusable:not(.accent-swatch):not(.settings-library-row):not(.theme-row)',
             columns: 1,
             onActivate: function(index, element) {
                 if (element && element.click) {
@@ -399,23 +473,8 @@ var SettingsScreen = (function() {
             onFocus: function(idx, element) { _scrollFocusedIntoView(element); },
             neighbors: {
                 left: 'topnav',
-                up: 'content',
+                up: 'settings-accent',
                 down: 'nowplaying-bar'
-            }
-        });
-
-        // NP bar
-        FocusManager.registerZone('nowplaying-bar', {
-            selector: '.np-bar-btn',
-            columns: 3,
-            onActivate: function(index) {
-                if (index === 0) Player.previous();
-                else if (index === 1) Player.togglePlayPause();
-                else if (index === 2) Player.next();
-            },
-            neighbors: {
-                up: 'settings-actions',
-                left: 'topnav'
             }
         });
     }

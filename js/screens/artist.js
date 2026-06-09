@@ -55,13 +55,13 @@ var ArtistScreen = (function() {
         // Left skeleton
         var left = el('div', { className: 'artist-detail-left' });
         left.appendChild(el('div', { className: 'skeleton', style: {
-            width: '200px', height: '200px', borderRadius: '50%', marginBottom: '20px'
+            width: '240px', height: '240px', borderRadius: '50%', marginBottom: '20px'
         }}));
         left.appendChild(el('div', { className: 'skeleton', style: {
-            width: '180px', height: '26px', borderRadius: '6px', marginBottom: '8px'
+            width: '220px', height: '32px', borderRadius: '6px', marginBottom: '10px'
         }}));
         left.appendChild(el('div', { className: 'skeleton', style: {
-            width: '120px', height: '16px', borderRadius: '6px', marginBottom: '24px'
+            width: '140px', height: '18px', borderRadius: '6px', marginBottom: '24px'
         }}));
         body.appendChild(left);
 
@@ -195,9 +195,9 @@ var ArtistScreen = (function() {
             id: 'artist-play-all-btn'
         });
         var playIcon = createSvg(SVG_PATHS.play);
-        playIcon.style.width = '16px';
-        playIcon.style.height = '16px';
-        playIcon.style.fill = 'white';
+        playIcon.style.width = '20px';
+        playIcon.style.height = '20px';
+        playIcon.style.fill = 'currentColor';
         playIcon.style.flexShrink = '0';
         playBtn.appendChild(playIcon);
         playBtn.appendChild(document.createTextNode(' Play All'));
@@ -211,8 +211,8 @@ var ArtistScreen = (function() {
             id: 'artist-shuffle-all-btn'
         });
         var shuffleIcon = createSvg(SVG_PATHS.shuffle);
-        shuffleIcon.style.width = '16px';
-        shuffleIcon.style.height = '16px';
+        shuffleIcon.style.width = '20px';
+        shuffleIcon.style.height = '20px';
         shuffleIcon.style.fill = 'currentColor';
         shuffleIcon.style.flexShrink = '0';
         shuffleBtn.appendChild(shuffleIcon);
@@ -291,7 +291,7 @@ var ArtistScreen = (function() {
             img.style.display = 'block';
             img.onerror = function() {
                 if (img.parentNode) img.parentNode.removeChild(img);
-                photo.appendChild(SonanceComponents.renderArtistAvatar(artist, 200, api));
+                photo.appendChild(SonanceComponents.renderArtistAvatar(artist, 240, api));
             };
             // V3-6-fix2 PERF-5: route through ImageCache.getByUrl so
             // returning to a previously-viewed artist hits the cache and the
@@ -309,7 +309,7 @@ var ArtistScreen = (function() {
             photo.appendChild(img);
         } else {
             // Fallback to Subsonic cover-art avatar (same as Library artists tab)
-            photo.appendChild(SonanceComponents.renderArtistAvatar(artist, 200, api));
+            photo.appendChild(SonanceComponents.renderArtistAvatar(artist, 240, api));
         }
 
         return photo;
@@ -338,7 +338,7 @@ var ArtistScreen = (function() {
 
             // Album art (80px)
             var artWrap = el('div', { className: 'artist-album-art' });
-            artWrap.appendChild(SonanceComponents.renderAlbumArt(album, 80, api));
+            artWrap.appendChild(SonanceComponents.renderAlbumArt(album, 100, api));
             row.appendChild(artWrap);
 
             // Info
@@ -407,7 +407,7 @@ var ArtistScreen = (function() {
             });
 
             var avatarWrap = el('div', { className: 'artist-similar-avatar' });
-            avatarWrap.appendChild(SonanceComponents.renderArtistAvatar(sim, 80, api));
+            avatarWrap.appendChild(SonanceComponents.renderArtistAvatar(sim, 110, api));
             card.appendChild(avatarWrap);
 
             card.appendChild(el('div', { className: 'artist-similar-name' },

@@ -3,21 +3,115 @@
    Samsung Tizen TV Music Player
    ============================================ */
 
-/* --- CSS Custom Properties --- */
+/* --- CSS Custom Properties ---
+   Background colours are driven by the theme selector (Settings → Appearance).
+   The :root values below are the default "OLED Black" theme; the
+   [data-theme="…"] blocks override the derived background/border vars while
+   leaving text + accent constant. Accent is set separately via JS. */
 :root {
+    /* Theme backgrounds (overridden per data-theme) */
     --bg-primary: #0a0a0c;
     --bg-secondary: #121217;
     --bg-card: #1a1a22;
     --bg-elevated: #222230;
     --bg-main: #1a1a24;
+    --border: #2a2a38;
+
+    /* RGB components of theme surfaces, used where an alpha layer is needed
+       (floating chrome pills, Now Playing overlays) so they tint to the
+       active theme instead of a hard-coded grey/black. Kept in sync with the
+       hex vars above per [data-theme] block. */
+    --bg-primary-rgb: 10, 10, 12;
+    --bg-elevated-rgb: 34, 34, 48;
+
+    /* Accent (set at runtime by App.applyAccentColor) */
     --accent: #e44d8a;
     --accent-rgb: 228, 77, 138;
     --accent-soft: rgba(var(--accent-rgb), 0.15);
     --accent-glow: rgba(var(--accent-rgb), 0.35);
+
+    /* Text */
     --text-primary: #f0f0f5;
-    --text-secondary: #8e8ea0;
-    --text-muted: #55556a;
+    --text-secondary: #9a9aae;
+    --text-muted: #6a6a80;
+
+    /* --- Type scale (hybrid TV scale, 9ft viewing) --- */
+    --fs-hero: 48px;        /* hero titles 44–52 */
+    --fs-section: 34px;     /* section / screen titles 30–40 */
+    --fs-detail-title: 32px;
+    --fs-body: 20px;        /* body minimum */
+    --fs-meta: 16px;        /* durations, track #, timestamps (decorative) */
+
+    /* --- Spacing tokens --- */
+    --sp-xs: 8px;
+    --sp-sm: 12px;
+    --sp-md: 20px;
+    --sp-lg: 32px;
+    --sp-xl: 48px;
+
+    /* --- Focus ring (solid white border). Drawn as a ::after overlay on the
+       focused element (see .focusable.focused::after) rather than a box-shadow:
+       a box-shadow ring renders outside the border box and gets clipped wherever
+       a focusable sits flush against an ancestor with overflow:hidden or at a
+       scroll-container edge (home grid, song lists, settings rows). The overlay
+       is a child painted on top (so it shows even over full-bleed cover art) and
+       lives inside the element, so no ancestor overflow can clip it. No scale,
+       no reflow. --- */
+    --focus-ring-width: 3px;
+
+    /* --- Card sizing (horizontal scroll rows) --- */
+    --card-w: 210px;
+
+    /* --- Transition timing --- */
+    --xfade: 220ms;
+}
+
+/* Theme: OLED Black is the :root default — declared for completeness. */
+[data-theme="oled"] {
+    --bg-primary: #0a0a0c;
+    --bg-secondary: #121217;
+    --bg-card: #1a1a22;
+    --bg-elevated: #222230;
+    --bg-main: #0a0a0c;
     --border: #2a2a38;
+    --bg-primary-rgb: 10, 10, 12;
+    --bg-elevated-rgb: 34, 34, 48;
+}
+
+/* Theme: Dark Grey */
+[data-theme="grey"] {
+    --bg-primary: #161618;
+    --bg-secondary: #1f1f23;
+    --bg-card: #26262b;
+    --bg-elevated: #313138;
+    --bg-main: #1b1b1e;
+    --border: #3a3a42;
+    --bg-primary-rgb: 22, 22, 24;
+    --bg-elevated-rgb: 49, 49, 56;
+}
+
+/* Theme: Navy */
+[data-theme="navy"] {
+    --bg-primary: #0a0e18;
+    --bg-secondary: #121a2a;
+    --bg-card: #18223a;
+    --bg-elevated: #212d4a;
+    --bg-main: #0e1422;
+    --border: #2a3656;
+    --bg-primary-rgb: 10, 14, 24;
+    --bg-elevated-rgb: 33, 45, 74;
+}
+
+/* Theme: Charcoal Warm */
+[data-theme="charcoal"] {
+    --bg-primary: #14120f;
+    --bg-secondary: #1f1c18;
+    --bg-card: #28241f;
+    --bg-elevated: #34302a;
+    --bg-main: #1a1714;
+    --border: #3c372f;
+    --bg-primary-rgb: 20, 18, 15;
+    --bg-elevated-rgb: 52, 48, 42;
 }
 
 /* --- Global Reset --- */
@@ -35,6 +129,7 @@ html, body, #app {
     background: var(--bg-main);
     color: var(--text-primary);
     font-family: 'SamsungOne', 'SamsungOneUIFW', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: var(--fs-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -52,15 +147,47 @@ html, body, #app {
     outline: none;
 }
 
-/* V3-4: focusable base — no generic outline. Individual card/row rules
-   below define focus via transform/background only (GPU-composited). */
+/* REDESIGN: one consistent focus style everywhere — a solid white ring drawn
+   as a ::after overlay (see below) that follows border-radius, never reflows,
+   and is never clipped by an ancestor's overflow. NO scale transforms
+   (Chromium 63 jitters on transformed focus); focus movement is instant. The
+   sliding pill (nav + Library tab strip) is exempt — those items do not carry
+   the .focusable class. */
 .focusable {
     /* transitions defined per-class; keep no global `transition: all` */
+    /* Positioning context for the focus-ring overlay (::after below). Safe:
+       no focusable is position:absolute, and the fixed mini-player keeps its
+       own `position: fixed` (defined later, wins on source order). */
+    position: relative;
 }
 
-/* V3-4: no default focus ring. Specific card/row rules add scale + bg. */
 .focusable.focused {
+    transform: none !important;
     outline: none;
+    z-index: 2;
+}
+
+/* The ring itself: a border drawn just inside the element's edges, on top of
+   all content (incl. full-bleed art), following the element's corner radius.
+   Uses top/right/bottom/left (not the `inset` shorthand) for Chromium 63. */
+.focusable.focused::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    border: var(--focus-ring-width) solid #ffffff;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 3;
+}
+
+/* Buttons that indicate focus with accent colour instead of a ring opt out of
+   the overlay (matches their existing `box-shadow: none` intent). */
+.np-ctrl-btn.focused::after,
+.album-star-btn.focused::after {
+    display: none;
 }
 
 /* --- V3-6: Lazy-loaded image fade-in ---
@@ -127,11 +254,11 @@ html, body, #app {
 
 .login-card {
     width: 100%;
-    max-width: 440px;
+    max-width: 580px;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 40px;
+    border-radius: 20px;
+    padding: 48px;
 }
 
 /* Logo area in login card */
@@ -139,62 +266,62 @@ html, body, #app {
     display: flex;
     flex-direction: column;
     align-items: center;
-    margin-bottom: 36px;
+    margin-bottom: var(--sp-xl);
 }
 
 .login-logo-icon {
-    width: 56px;
-    height: 56px;
-    border-radius: 14px;
+    width: 72px;
+    height: 72px;
+    border-radius: 18px;
     background: linear-gradient(135deg, var(--accent), #8a4dff);
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 14px;
+    margin-bottom: var(--sp-md);
 }
 
 .login-logo-icon svg {
-    width: 30px;
-    height: 30px;
+    width: 40px;
+    height: 40px;
     fill: white;
 }
 
 .login-logo-title {
-    font-size: 22px;
+    font-size: var(--fs-section);
     font-weight: 700;
     color: var(--text-primary);
     letter-spacing: 0.5px;
 }
 
 .login-logo-subtitle {
-    font-size: 10px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
     letter-spacing: 1.5px;
     text-transform: uppercase;
-    margin-top: 4px;
+    margin-top: 6px;
 }
 
 /* Form fields */
 .login-field {
-    margin-bottom: 18px;
+    margin-bottom: var(--sp-md);
 }
 
 .login-field label {
     display: block;
-    font-size: 13px;
+    font-size: var(--fs-meta);
     font-weight: 500;
     color: var(--text-secondary);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 
 .login-field input {
     width: 100%;
-    padding: 14px;
+    padding: 16px 18px;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 12px;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: var(--fs-body);
     font-family: inherit;
 }
 
@@ -226,23 +353,23 @@ html, body, #app {
 }
 
 .login-server-row .login-field:last-child {
-    width: 100px;
+    width: 140px;
 }
 
 /* Connect button */
 .login-btn {
     width: 100%;
-    padding: 14px;
+    padding: 16px;
     background: var(--accent);
     border: none;
-    border-radius: 12px;
+    border-radius: 14px;
     color: #fff;
-    font-size: 15px;
+    font-size: var(--fs-body);
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    transition: opacity 0.2s ease, transform 0.2s ease;
-    margin-top: 8px;
+    transition: opacity 0.2s ease;
+    margin-top: var(--sp-sm);
 }
 
 .login-btn:focus {
@@ -258,13 +385,13 @@ html, body, #app {
 
 /* Error message */
 .login-error {
-    margin-top: 16px;
-    padding: 12px;
+    margin-top: var(--sp-md);
+    padding: 14px;
     background: rgba(239, 68, 68, 0.1);
     border: 1px solid rgba(239, 68, 68, 0.3);
     border-radius: 10px;
     color: #ef4444;
-    font-size: 13px;
+    font-size: var(--fs-meta);
     text-align: center;
     display: none;
 }
@@ -305,7 +432,7 @@ html, body, #app {
    ============================================ */
 #top-nav {
     position: fixed;
-    top: 24px;
+    top: 28px;
     left: 0;
     right: 0;
     z-index: 100;
@@ -318,9 +445,9 @@ html, body, #app {
     position: relative;
     display: inline-flex;
     align-items: center;
-    background: rgba(50, 50, 60, 0.85);
-    border-radius: 25px;
-    padding: 4px 6px;
+    background: rgba(var(--bg-elevated-rgb), 0.92);
+    border-radius: 30px;
+    padding: 5px 7px;
     pointer-events: auto;
 }
 
@@ -334,8 +461,8 @@ html, body, #app {
 .top-nav-item {
     position: relative;
     z-index: 2;
-    padding: 8px 20px;
-    font-size: 15px;
+    padding: 11px 28px;
+    font-size: var(--fs-body);
     font-weight: 500;
     color: rgba(255, 255, 255, 0.55);
     white-space: nowrap;
@@ -343,17 +470,17 @@ html, body, #app {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 34px;
+    min-height: 44px;
     cursor: pointer;
     border: none;
     background: transparent;
     font-family: inherit;
-    border-radius: 20px;
+    border-radius: 24px;
 }
 
 .top-nav-item svg {
-    width: 18px;
-    height: 18px;
+    width: 28px;
+    height: 28px;
     display: block;
 }
 
@@ -403,10 +530,10 @@ html, body, #app {
    ============================================ */
 #page-container {
     position: fixed;
-    top: 80px;      /* clear the nav bar */
+    top: 120px;     /* clear the (scaled) nav bar + mini player */
     left: 0;
     right: 0;
-    bottom: 76px;   /* clear the NP bar */
+    bottom: 0;      /* REDESIGN: no bottom bar */
     overflow: hidden;
 }
 
@@ -414,6 +541,7 @@ html, body, #app {
     top: 0;
 }
 
+/* Legacy class retained as a no-op (mini player no longer reserves space). */
 #page-container.no-np-bar {
     bottom: 0;
 }
@@ -432,8 +560,12 @@ html, body, #app {
     box-sizing: border-box;
 }
 
-/* Centre the page content within the full 1920px width (max 1600px) */
-#page-current > * {
+/* Centre the page content within the full 1920px width (max 1600px).
+   The ghost is the demoted live layer (id cleared, class swapped to
+   .page-ghost during a transition) — it must keep the SAME centring so the
+   outgoing screen doesn't reflow to full width mid-crossfade. */
+#page-current > *,
+.page-ghost > * {
     max-width: 1600px;
     margin-left: auto;
     margin-right: auto;
@@ -449,6 +581,10 @@ html, body, #app {
     pointer-events: none;
     will-change: transform, opacity;
     z-index: 1;
+    /* Mirror .page-layer's box model so the ghost keeps the live layer's
+       padding (it loses the .page-layer class on demotion). */
+    padding: 28px 48px 20px;
+    box-sizing: border-box;
 }
 
 /* Centred page content wrapper */
@@ -482,67 +618,54 @@ html, body, #app {
 }
 
 /* ============================================
-   Now Playing Bar (76px) — fixed full-width bottom bar (v3)
+   Top-left Mini Player (REDESIGN — replaces the bottom now-playing bar)
+   Small album art + title + artist + play/pause indicator + thin progress
+   bar along the bottom edge. Focusable; Enter opens Now Playing fullscreen.
+   No transport controls (remote hardware handles play/pause/prev/next).
    ============================================ */
-.now-playing-bar {
+.mini-player {
     position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 76px;
-    background: rgba(34, 34, 48, 0.95);
-    border-top: 1px solid var(--border);
+    top: 24px;
+    left: 32px;
+    z-index: 101;
     display: flex;
     align-items: center;
-    padding: 0 24px;
-    z-index: 50;
+    width: 440px;
+    height: 84px;
+    padding: 10px 20px 10px 10px;
+    border-radius: 18px;
+    background: rgba(var(--bg-elevated-rgb), 0.92);
+    overflow: hidden;
+    transition: opacity var(--xfade) ease;
 }
 
-.now-playing-bar .mini-progress {
-    position: absolute;
-    top: 0;
-    left: 0;
-    height: 2px;
-    width: 100%;
-    background: var(--accent);
-    transform-origin: left center;
-    transform: scaleX(var(--progress, 0));
-    transition: transform 0.3s linear;
-    will-change: transform;
+.mini-player-idle {
+    opacity: 0.55;
 }
 
-.now-playing-bar-left {
-    display: flex;
-    align-items: center;
-    flex: 1;
-    min-width: 0;
-}
-
-.now-playing-bar-left > * + * {
-    margin-left: 14px;
-}
-
-.now-playing-bar-art {
-    width: 48px;
-    height: 48px;
-    border-radius: 6px;
+.mini-player-art {
+    width: 64px;
+    height: 64px;
+    border-radius: 10px;
     background: var(--bg-card);
     flex-shrink: 0;
     overflow: hidden;
 }
 
-.now-playing-bar-art img {
+.mini-player-art img {
     width: 100%;
     height: 100%;
     object-fit: cover;
 }
 
-.now-playing-bar-info {
+.mini-player-info {
     min-width: 0;
+    flex: 1;
+    margin-left: 16px;
 }
 
-.now-playing-bar-title {
-    font-size: 14px;
+.mini-player-title {
+    font-size: var(--fs-body);
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -550,99 +673,35 @@ html, body, #app {
     text-overflow: ellipsis;
 }
 
-.now-playing-bar-artist {
-    font-size: 12px;
+.mini-player-artist {
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    margin-top: 3px;
 }
 
-.now-playing-bar-center {
-    display: flex;
-    align-items: center;
-}
-
-.now-playing-bar-center > * + * {
-    margin-left: 20px;
-}
-
-.now-playing-bar-center button {
-    background: none;
-    border: none;
+.mini-player-status {
+    flex-shrink: 0;
+    margin-left: 14px;
     color: var(--text-secondary);
-    cursor: pointer;
-    padding: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-}
-
-.now-playing-bar-center button svg {
-    width: 20px;
-    height: 20px;
-    fill: currentColor;
-}
-
-/* Now playing bar button focus state */
-/* NP bar small buttons: color tint only, no glow/outline */
-.np-bar-btn.focused {
-    outline: none !important;
-    border-radius: 50%;
-    color: var(--accent);
-    box-shadow: none;
-    transform: none;
-}
-
-/* NP bar play button: pink fill on focus */
-.play-btn-main.focused {
-    outline: none !important;
-    background: var(--accent) !important;
-    box-shadow: none;
-    transform: none;
-}
-
-.play-btn-main.focused svg {
-    fill: white !important;
-}
-
-.play-btn-main {
-    width: 42px;
-    height: 42px;
-    border-radius: 50%;
-    background: #fff !important;
-    color: var(--bg-primary) !important;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
-.play-btn-main svg {
-    width: 18px;
-    height: 18px;
-    fill: var(--bg-primary) !important;
-}
-
-.now-playing-bar-right {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-}
-
-.now-playing-bar-right > * + * {
-    margin-left: 12px;
-}
-
-.volume-icon {
-    color: var(--text-muted);
-}
-
-.volume-icon svg {
-    width: 18px;
-    height: 18px;
-    fill: currentColor;
+.mini-player .mini-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    width: 100%;
+    background: var(--accent);
+    transform-origin: left center;
+    transform: scaleX(var(--progress, 0));
+    transition: transform 0.3s linear;
+    will-change: transform;
 }
 
 .mini-volume-bar {
@@ -692,7 +751,7 @@ html, body, #app {
     left: 0;
     right: 0;
     height: 30%;
-    background: linear-gradient(to bottom, rgba(10, 10, 12, 0.8), transparent);
+    background: linear-gradient(to bottom, rgba(var(--bg-primary-rgb), 0.8), transparent);
     z-index: 1;
     pointer-events: none;
 }
@@ -703,7 +762,7 @@ html, body, #app {
     left: 0;
     right: 0;
     height: 40%;
-    background: linear-gradient(to top, rgba(10, 10, 12, 0.85), transparent);
+    background: linear-gradient(to top, rgba(var(--bg-primary-rgb), 0.85), transparent);
     z-index: 1;
     pointer-events: none;
 }
@@ -720,46 +779,47 @@ html, body, #app {
 }
 
 .np-screen-art {
-    width: 280px;
-    height: 280px;
-    margin-bottom: 28px;
+    width: 400px;
+    height: 400px;
+    margin-bottom: var(--sp-lg);
     position: relative;
 }
 
 .np-screen-art-inner {
-    width: 280px;
-    height: 280px;
+    width: 400px;
+    height: 400px;
     border-radius: 16px;
     overflow: hidden;
     box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
 }
 
 .np-screen-title {
-    font-size: 28px;
+    font-size: var(--fs-section);
     font-weight: 700;
     color: var(--text-primary);
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
+    max-width: 400px;
     margin-bottom: 6px;
 }
 
 .np-screen-subtitle {
-    font-size: 17px;
+    font-size: var(--fs-body);
     color: var(--text-secondary);
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
-    margin-bottom: 28px;
+    max-width: 400px;
+    margin-bottom: var(--sp-lg);
 }
 
 /* Progress bar */
 .np-screen-progress-wrap {
     width: 100%;
+    max-width: 400px;
     margin-bottom: 20px;
 }
 
@@ -835,7 +895,7 @@ html, body, #app {
 }
 
 .np-screen-time {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
 }
@@ -845,7 +905,7 @@ html, body, #app {
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 32px;
+    margin-bottom: 0;
 }
 
 .np-screen-controls > * + * {
@@ -964,177 +1024,72 @@ html, body, #app {
 /* ============================================
    Queue Screen
    ============================================ */
+/* REDESIGN: full-width single track list (no now-playing card — the mini
+   player shows the current track). Rows = number + thumb + title/artist +
+   duration. Focus = the global white ring (no scale / accent-fill). */
 .queue-screen {
     display: flex;
-    padding: 0 8px;
+    flex-direction: column;
     height: 100%;
     overflow: hidden;
+    padding: 0 8px;
 }
 
-.queue-screen > * + * {
-    margin-left: 32px;
+.queue-heading {
+    font-size: var(--fs-section);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--sp-md);
 }
 
-.queue-left {
-    width: 320px;
-    flex-shrink: 0;
-}
-
-.queue-right {
+.queue-list {
     flex: 1;
-    min-width: 0;
     min-height: 0;
     overflow-y: auto;
-    position: relative;
-}
-
-.queue-section-heading {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 16px;
-}
-
-/* Now Playing card */
-.queue-np-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 20px;
-    cursor: pointer;
-    transition: transform 0.15s ease;
-    will-change: transform;
-    transform-origin: center center;
-}
-
-/* V3-4: scale-up focus, no accent outline */
-.queue-np-card.focused {
-    outline: none !important;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    border-color: var(--border) !important;
-    transform: scale(1.04);
-    z-index: 5;
-}
-
-.queue-np-art {
-    width: 280px;
-    height: 280px;
-    border-radius: 10px;
-    overflow: hidden;
-    margin-bottom: 16px;
-}
-
-.queue-np-title {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 4px;
-}
-
-.queue-np-artist {
-    font-size: 15px;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 16px;
-}
-
-.queue-np-progress-wrap {
-    width: 100%;
-}
-
-.queue-np-progress {
-    width: 100%;
-    height: 3px;
-    background: var(--border);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-bottom: 6px;
-}
-
-.queue-np-progress-fill {
-    height: 100%;
-    width: 100%;
-    background: var(--accent);
-    border-radius: 2px;
-    transform-origin: left center;
-    transform: scaleX(var(--progress, 0));
-    transition: transform 0.3s linear;
-    will-change: transform;
-}
-
-.queue-np-time-row {
-    display: flex;
-    justify-content: space-between;
-}
-
-.queue-np-time {
-    font-size: 12px;
-    color: var(--text-muted);
-    font-variant-numeric: tabular-nums;
-}
-
-/* Queue list rows (V3-4: centred narrow list) */
-.queue-list {
-    padding-bottom: 24px;
-    max-width: 1000px;
-    margin: 0 auto;
-    padding-left: 12px;
-    padding-right: 12px;
+    overflow-x: hidden;
+    padding-bottom: var(--sp-lg);
+    padding-right: var(--sp-md);
+    max-width: 1100px;
 }
 
 .queue-empty {
     color: var(--text-muted);
-    font-size: 15px;
-    padding: 32px 0;
+    font-size: var(--fs-body);
+    padding: var(--sp-xl) 0;
     text-align: center;
 }
 
 .queue-row {
     display: flex;
     align-items: center;
-    padding: 10px 12px;
-    border-radius: 8px;
+    height: 72px;
+    padding: 0 16px;
+    border-radius: 12px;
     cursor: pointer;
-    transition: transform 0.12s ease;
-    /* V3-6: will-change applied dynamically to focused row only */
-    transform-origin: left center;
+    box-sizing: border-box;
 }
 
 .queue-row > * + * {
-    margin-left: 14px;
-}
-
-/* V3-6-fix GFX-4: focused queue rows match the top-nav pill (0.55). */
-.queue-row.focused {
-    background: rgba(var(--accent-rgb), 0.55);
-    outline: none !important;
-    box-shadow: none !important;
-    border: none !important;
-    transform: scale(1.02);
+    margin-left: 16px;
 }
 
 .queue-row.focused .queue-row-title {
-    color: white;
-    font-weight: 600;
+    color: #fff;
 }
 
 .queue-row-num {
-    width: 28px;
-    font-size: 14px;
+    width: 32px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
     text-align: center;
     flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
 }
 
 .queue-row-thumb {
-    width: 44px;
-    height: 44px;
-    border-radius: 4px;
+    width: 56px;
+    height: 56px;
+    border-radius: 6px;
     background: var(--bg-card);
     flex-shrink: 0;
     overflow: hidden;
@@ -1146,7 +1101,7 @@ html, body, #app {
 }
 
 .queue-row-title {
-    font-size: 15px;
+    font-size: var(--fs-body);
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -1155,7 +1110,7 @@ html, body, #app {
 }
 
 .queue-row-artist {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -1163,7 +1118,7 @@ html, body, #app {
 }
 
 .queue-row-duration {
-    font-size: 14px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
@@ -1245,29 +1200,29 @@ html, body, #app {
 }
 
 .settings-section-title {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     font-weight: 600;
     color: var(--text-muted);
     letter-spacing: 1px;
     text-transform: uppercase;
-    margin-bottom: 16px;
+    margin-bottom: var(--sp-md);
 }
 
 .settings-info-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 14px 0;
+    padding: 16px 0;
     border-bottom: 1px solid var(--border);
 }
 
 .settings-info-label {
-    font-size: 14px;
+    font-size: var(--fs-body);
     color: var(--text-secondary);
 }
 
 .settings-info-value {
-    font-size: 14px;
+    font-size: var(--fs-body);
     color: var(--text-primary);
     font-weight: 500;
 }
@@ -1275,42 +1230,94 @@ html, body, #app {
 .settings-logout-btn {
     display: inline-flex;
     align-items: center;
-    padding: 12px 28px;
+    padding: 14px 32px;
     background: rgba(239, 68, 68, 0.12);
     border: 1px solid rgba(239, 68, 68, 0.25);
     border-radius: 12px;
     color: #ef4444;
-    font-size: 14px;
+    font-size: var(--fs-body);
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    transition: transform 0.15s ease;
-    will-change: transform;
 }
 
 .settings-logout-btn.focused {
     outline: none !important;
-    transform: scale(1.04);
     background: rgba(239, 68, 68, 0.2);
 }
 
 .settings-logout-hint {
-    font-size: 12px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
-    margin-top: 10px;
+    margin-top: var(--sp-sm);
     line-height: 1.4;
+}
+
+/* --- Theme selector (REDESIGN — background themes) --- */
+.theme-picker-row {
+    padding: var(--sp-sm) 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.theme-list {
+    display: block;
+}
+
+.theme-row {
+    display: flex;
+    align-items: center;
+    height: 56px;
+    padding: 0 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+.theme-row > * + * {
+    margin-left: var(--sp-md);
+}
+
+.theme-row-swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.theme-row-name {
+    flex: 1;
+    font-size: var(--fs-body);
+    color: var(--text-primary);
+}
+
+.theme-row-check {
+    flex-shrink: 0;
+    font-size: var(--fs-body);
+    font-weight: 700;
+    color: var(--accent);
+    opacity: 0;
+}
+
+.theme-row.is-selected .theme-row-name {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.theme-row.is-selected .theme-row-check {
+    opacity: 1;
 }
 
 /* --- Accent Colour Picker --- */
 .accent-picker-row {
-    padding: 14px 0;
+    padding: var(--sp-sm) 0;
     border-bottom: 1px solid var(--border);
 }
 
 .accent-picker-label {
-    font-size: 14px;
+    font-size: var(--fs-body);
     color: var(--text-secondary);
-    margin-bottom: 14px;
+    margin-bottom: var(--sp-sm);
 }
 
 .accent-swatches {
@@ -1319,18 +1326,16 @@ html, body, #app {
 }
 
 .accent-swatch {
-    width: 36px;
-    height: 36px;
+    width: 52px;
+    height: 52px;
     border-radius: 50%;
     border: 2px solid transparent;
     display: inline-block;
-    margin-right: 12px;
-    margin-bottom: 8px;
+    margin-right: 16px;
+    margin-bottom: 12px;
     padding: 0;
     cursor: pointer;
     vertical-align: middle;
-    transition: transform 0.15s ease;
-    /* V3-6: will-change applied dynamically */
 }
 
 .accent-swatch.selected {
@@ -1352,9 +1357,9 @@ html, body, #app {
 
 .accent-reset {
     display: inline-block;
-    margin-top: 6px;
-    padding: 6px 10px;
-    font-size: 13px;
+    margin-top: var(--sp-xs);
+    padding: 10px 16px;
+    font-size: var(--fs-body);
     color: var(--text-secondary);
     background: transparent;
     border: 1px solid transparent;
@@ -1375,27 +1380,26 @@ html, body, #app {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 14px 12px;
+    height: 56px;
+    padding: 0 12px;
     border-bottom: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 12px;
     cursor: pointer;
-    transition: background 0.15s ease;
+    box-sizing: border-box;
 }
 
 .settings-toggle-row.focused {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
     background: var(--accent-soft);
     border-bottom-color: transparent;
 }
 
 .settings-toggle-label {
-    font-size: 14px;
+    font-size: var(--fs-body);
     color: var(--text-secondary);
 }
 
 .settings-toggle-value {
-    font-size: 14px;
+    font-size: var(--fs-body);
     color: var(--text-primary);
     font-weight: 500;
 }
@@ -1415,9 +1419,9 @@ html, body, #app {
 }
 
 .settings-toggle-hint {
-    font-size: 12px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
-    margin-top: 10px;
+    margin-top: var(--sp-sm);
     line-height: 1.4;
     padding: 0 12px;
 }
@@ -1445,11 +1449,11 @@ html, body, #app {
 }
 
 .settings-library-checkbox {
-    width: 20px;
-    height: 20px;
-    border-radius: 4px;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
     border: 2px solid var(--text-muted);
-    margin-right: 14px;
+    margin-right: 16px;
     flex-shrink: 0;
     box-sizing: border-box;
     background: transparent;
@@ -1469,65 +1473,68 @@ html, body, #app {
 }
 
 .settings-library-name {
-    font-size: 14px;
+    font-size: var(--fs-body);
     color: var(--text-primary);
 }
 
 .settings-libraries-hint {
-    font-size: 12px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
-    margin-top: 10px;
+    margin-top: var(--sp-sm);
     line-height: 1.4;
     padding: 0 12px;
 }
 
 /* --- P15c: Two-column Settings layout --- */
+/* REDESIGN: main settings list centred on screen, About card pinned
+   top-right (absolute so it doesn't pull the list off-centre). */
 .settings-layout {
-    display: flex;
+    position: relative;
     height: 100%;
     overflow: hidden;
 }
 
 .settings-left {
-    flex: 1;
+    height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-right: 40px; /* NOT flex gap — Chromium 63 */
     padding-bottom: 20px;
     min-height: 0;       /* allow flex child to scroll */
     max-width: 720px;
+    margin: 0 auto;      /* centre the main info column */
 }
 
 .settings-right {
+    position: absolute;
+    top: 8px;
+    right: 0;
     width: 280px;
-    flex-shrink: 0;
-    padding-top: 8px;
 }
 
 .settings-about {
     background: rgba(255, 255, 255, 0.04);
-    border-radius: 12px;
-    padding: 20px 24px;
+    border-radius: 14px;
+    padding: 24px 28px;
     border: 1px solid var(--border);
 }
 
 .settings-about-title {
-    font-size: 18px;
+    font-size: 24px;
     font-weight: 700;
     color: var(--text-primary);
-    margin-bottom: 4px;
+    margin-bottom: 6px;
 }
 
 .settings-about-subtitle {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--accent);
-    margin-bottom: 16px;
+    margin-bottom: var(--sp-md);
 }
 
 .settings-about-row {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 
 .settings-about-row:last-child {
@@ -1599,191 +1606,203 @@ html, body, #app {
 }
 
 /* ============================================
-   Home Screen
+   Home Screen (REDESIGN)
    ============================================ */
 .home-screen {
     height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-bottom: 20px;
+    padding-bottom: 40px;
     position: relative;
 }
 
-/* Hero Banner */
+/* --- Hero: sharp album cover left-aligned, details following --- */
 .home-hero {
-    height: 280px;
-    border-radius: 16px;
+    position: relative;
+    border-radius: 20px;
     overflow: hidden;
+    margin: 0 0 28px;
+    padding: 36px 40px;
+    background: var(--bg-primary);
     display: flex;
     align-items: center;
-    padding: 40px;
-    position: relative;
-    margin-bottom: 12px;
-    background: var(--bg-primary);
-}
-
-.home-hero > * + * {
-    margin-left: 36px;
 }
 
 .home-hero-skeleton {
     width: 100%;
-    height: 100%;
-    border-radius: 16px;
+    height: 280px;
+    border-radius: 20px;
 }
 
-.home-hero-art {
+.home-hero-cover {
     flex-shrink: 0;
-    position: relative;
+    width: 240px;
+    height: 240px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg-elevated);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
-.home-hero-art .album-art {
-    position: relative;
-    z-index: 1;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-}
-
-.hero-glow {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 320px;
-    height: 320px;
-    background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
-    pointer-events: none;
-    z-index: 0;
-}
-
-.home-hero-info {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    min-width: 0;
+.home-hero-cover-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
 }
 
 .home-hero-content {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    padding: 36px 44px;
+}
+
+.home-hero-cover + .home-hero-content {
+    margin-left: 40px;
 }
 
 .home-hero-label {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: var(--fs-meta);
+    font-weight: 700;
     color: var(--accent);
     letter-spacing: 2px;
     text-transform: uppercase;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
 }
 
 .home-hero-title {
-    font-size: 34px;
+    font-size: var(--fs-hero);
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 2px 16px rgba(0, 0, 0, 0.5);
+}
+
+.home-hero-subtitle {
+    font-size: var(--fs-body);
+    color: rgba(255, 255, 255, 0.82);
+    margin-bottom: 24px;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+}
+
+.home-hero-buttons {
+    display: flex;
+    margin-top: 4px;
+}
+
+.home-hero-buttons > * + * {
+    margin-left: 16px;
+}
+
+.hero-play-btn,
+.hero-shuffle-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 14px 36px;
+    background: rgba(255, 255, 255, 0.14);
+    border: none;
+    border-radius: 30px;
+    color: #fff;
+    font-size: var(--fs-body);
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.hero-play-btn {
+    background: #fff;
+    color: #111;
+}
+
+.hero-play-btn > * + *,
+.hero-shuffle-btn > * + * {
+    margin-left: 10px;
+}
+
+/* --- Sections --- */
+.home-section {
+    margin-bottom: 40px;
+}
+
+.home-qa-section {
+    margin-bottom: 44px;
+}
+
+.home-section-heading {
+    font-size: var(--fs-section);
     font-weight: 700;
     color: var(--text-primary);
-    margin-bottom: 8px;
+    margin-bottom: 20px;
+}
+
+/* --- Quick-access 2×3 grid (wide rectangular pills) --- */
+.home-qa-grid {
+    display: flex;
+    flex-wrap: wrap;
+    /* No flex `gap` (Chromium 63) — use negative-margin gutter trick. */
+    margin: -10px;
+}
+
+.qa-tile {
+    box-sizing: border-box;
+    width: calc(33.333% - 20px);
+    margin: 10px;
+    height: 96px;
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--bg-card);
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.qa-tile-art {
+    width: 72px;
+    height: 72px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.qa-tile-info {
+    min-width: 0;
+    margin-left: 16px;
+}
+
+.qa-tile-title {
+    font-size: var(--fs-body);
+    font-weight: 600;
+    color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.home-hero-subtitle {
-    font-size: 18px;
+.qa-tile-artist {
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
-    margin-bottom: 20px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 4px;
 }
 
-.home-hero-buttons {
-    display: flex;
-    margin-top: 20px;
-}
-
-.home-hero-buttons > * + * {
-    margin-left: 14px;
-}
-
-.hero-play-btn {
-    display: inline-flex;
-    align-items: center;
-    padding: 10px 28px;
-    background: rgba(255, 255, 255, 0.08);
-    border: none;
-    border-radius: 24px;
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 15px;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    transition: transform 0.15s ease;
-    will-change: transform;
-}
-
-.hero-play-btn > * + * {
-    margin-left: 8px;
-}
-
-.hero-play-btn.focused {
-    outline: none !important;
-    transform: scale(1.06);
-    background: var(--accent);
-    color: white;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-
-.hero-shuffle-btn {
-    display: inline-flex;
-    align-items: center;
-    padding: 10px 28px;
-    background: rgba(255, 255, 255, 0.08);
-    border: none;
-    border-radius: 24px;
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 15px;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    transition: transform 0.15s ease;
-    will-change: transform;
-}
-
-.hero-shuffle-btn > * + * {
-    margin-left: 8px;
-}
-
-.hero-shuffle-btn.focused {
-    outline: none !important;
-    transform: scale(1.06);
-    background: var(--accent);
-    color: white;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-
-/* Sections */
-.home-section {
-    margin-bottom: 32px;
-}
-
-.home-section-heading {
-    font-size: 18px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    color: var(--text-primary);
-    margin-bottom: 18px;
-}
-
-/* Horizontal scrolling row (V3-4: extra vertical padding so 1.08x
-   scaled cards don't clip; overflow-y stays visible). */
+/* --- Horizontal scrolling rows --- */
 .home-row {
     display: flex;
     overflow-x: auto;
     overflow-y: visible;
-    padding: 16px 16px 28px;
+    padding: 6px 6px 16px;
     scroll-behavior: smooth;
 }
 
 .home-row > * + * {
-    margin-left: 18px;
+    margin-left: 24px;
 }
 
 .home-row::-webkit-scrollbar {
@@ -1793,96 +1812,57 @@ html, body, #app {
 /* Album Card (horizontal row) */
 .album-card {
     flex-shrink: 0;
-    width: 162px;
+    width: var(--card-w);
     cursor: pointer;
-    transition: transform 0.15s ease, opacity 0.15s ease;
-    /* V3-6: will-change applied dynamically to focused card only */
-    transform-origin: center center;
-    border-radius: 10px;
-    padding-bottom: 4px;
-    /* V3.8-fix2 (was V3-6-fix3 GFX-1 for grid cards): force the card
-       onto its own compositor layer at rest so the focused scale
-       doesn't briefly drop the border-radius clip on neighbouring
-       cards' cover art (Tizen 5.0 / Chromium 63 layer recomposition
-       artefact). */
+    border-radius: 12px;
+    padding-bottom: 6px;
     transform: translateZ(0);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
 }
 
-/* V3-4: scale-up focus, no border/outline/shadow on the card itself.
-   The enlarged card IS the focus indicator. */
-.album-card.focused {
-    outline: none !important;
-    box-shadow: none !important;
-    border-color: transparent !important;
-    /* V3.8-fix2: keep translateZ on focus so the focused state stays
-       on the same compositor layer as the at-rest state. */
-    transform: scale(1.08) translateZ(0);
-    z-index: 5;
-}
-
-/* Subtle lift on the cover when focused */
-.album-card.focused .album-art,
-.album-card.focused .album-card-art,
-.album-card.focused .album-art-fill {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
 .album-card-title {
-    font-size: 14px;
+    font-size: var(--fs-body);
     font-weight: 600;
     color: var(--text-primary);
-    margin-top: 10px;
+    margin-top: 12px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .album-card-artist {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-top: 2px;
+    margin-top: 3px;
 }
 
-/* Playlist Card */
+/* Playlist Card (gradient background distinguishes from album art) */
 .playlist-card {
     flex-shrink: 0;
-    width: 230px;
-    min-height: 120px;
+    width: var(--card-w);
+    min-height: var(--card-w);
     border: 1px solid var(--border);
     border-radius: 14px;
-    padding: 22px;
+    padding: 24px;
     cursor: pointer;
-    transition: transform 0.15s ease, opacity 0.15s ease;
-    /* V3-6: will-change applied dynamically */
-    transform-origin: center center;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
 }
 
-/* V3-4: scale-up focus, no accent ring */
-.playlist-card.focused {
-    outline: none !important;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    border-color: var(--border) !important;
-    transform: scale(1.08);
-    z-index: 5;
-}
-
 .playlist-card-name {
-    font-size: 16px;
+    font-size: 22px;
     font-weight: 700;
     color: var(--text-primary);
-    margin-bottom: 4px;
+    margin-bottom: 6px;
 }
 
 .playlist-card-count {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
 }
 
@@ -1890,7 +1870,7 @@ html, body, #app {
 .home-empty {
     padding: 24px;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: var(--fs-body);
 }
 
 .home-error {
@@ -1912,58 +1892,50 @@ html, body, #app {
    ============================================ */
 .library-screen {
     display: flex;
+    flex-direction: column;
     height: 100%;
     position: relative;
     overflow: hidden;
 }
 
-/* Vertical pill sub-nav (left side, top-aligned with content grid) */
-.library-subnav {
-    position: absolute;
-    left: 0;
-    top: 0;
+/* --- Header: horizontal tab strip + contextual actions --- */
+.library-header {
     display: flex;
-    flex-direction: column;
-    background: rgba(30, 30, 38, 0.60);
-    border-radius: 20px;
-    padding: 6px;
-    z-index: 10;
-    width: 140px;
-    box-sizing: border-box;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px 16px;
+    flex-shrink: 0;
 }
 
-.library-subnav-item {
+.library-tabs {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.library-tab {
     position: relative;
     z-index: 2;
-    padding: 10px 20px;
-    font-size: 14px;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.55);
-    border-radius: 16px;
-    text-align: center;
+    padding: 10px 24px;
+    font-size: var(--fs-body);
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.5);
+    border-radius: 22px;
     cursor: pointer;
     font-family: inherit;
-    transition: color 0.15s ease;
-    margin: 2px 0;  /* NOT flex gap */
+    white-space: nowrap;
+    margin-right: 6px;
 }
 
-.library-subnav-item.focused {
-    color: white;
-    font-weight: 600;
-}
+.library-tab.selected { color: #fff; }
+.library-tab.focused-tab { color: #fff; }
 
-.library-subnav-item.selected {
-    color: white;
-    font-weight: 600;
-}
-
-/* Sliding vertical pill */
-.library-subnav-pill {
+.library-tab-pill {
     position: absolute;
-    left: 6px;
-    right: 6px;
     top: 0;
-    border-radius: 16px;
+    left: 0;
+    height: 100%;
+    border-radius: 22px;
     z-index: 1;
     transition: transform 0.2s ease;
     will-change: transform;
@@ -1971,88 +1943,107 @@ html, body, #app {
     background: transparent;
 }
 
-/* Focused = user is actively browsing the sub-nav = ACCENT */
-.library-subnav-pill.focused {
+.library-tab-pill.focused {
     background: rgba(var(--accent-rgb), 0.55);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
 }
 
-/* Selected = user has moved into content, sub-nav shows current tab = GREY */
-.library-subnav-pill.selected {
+.library-tab-pill.selected {
     background: rgba(255, 255, 255, 0.15);
-    box-shadow: none;
 }
 
-/* Library content area (scrollable, cleared of the sub-nav) */
+/* --- Actions (favourites filter + shuffle) --- */
+.library-actions {
+    display: inline-flex;
+    align-items: center;
+}
+
+.library-action {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 22px;
+    margin-left: 12px;
+    background: var(--bg-card);
+    border: none;
+    border-radius: 24px;
+    color: var(--text-secondary);
+    font-size: var(--fs-meta);
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.library-action svg {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+}
+
+.library-action-label { margin-left: 10px; }
+
+.library-fav-filter.is-active {
+    color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.library-fav-filter.is-nofav { color: var(--text-primary); }
+
+/* --- Content area (scrollable) --- */
 .library-content {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-bottom: 20px;
+    padding-bottom: 32px;
     position: relative;
-    margin-left: 180px;  /* clear the 140px sub-nav + 40px breathing room */
     transition: opacity 0.15s ease;
     will-change: opacity;
 }
 
-.library-loading {
-    /* Wrapper for skeleton loaders */
-}
-
-/* Grid Layouts (V3-4: centred, with edge padding so scaled cards don't clip).
-   The library-content parent is already offset right of the sub-nav, so we
-   centre within that remaining column rather than page-centring. */
+/* --- Grid layouts --- */
 .library-grid {
     display: grid;
-    grid-gap: 22px;
-    /* 24px vertical padding keeps the top/bottom scaled cards from clipping
-       against the scroll viewport edge; 28px horizontal matches. */
-    padding: 24px 28px;
-    /* Required so scale transforms don't trigger a horizontal scrollbar */
+    grid-gap: 28px;
+    padding: 16px 8px 28px;
     overflow: visible;
 }
 
 .library-albums-grid {
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    grid-gap: 28px 20px;
-    justify-content: center;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-gap: 34px 24px;
 }
 
 .library-artists-grid {
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    grid-gap: 24px 16px;
-    justify-content: center;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-gap: 30px 20px;
 }
 
-/* V3-6-fix2 PERF-2: virtualised artists tab.
-   Mount wraps a tall spacer + an absolutely-positioned inner grid.
-   The inner grid keeps all the layout/styling rules. */
-.library-artists-virtual-mount {
+.library-genres-grid,
+.library-playlists-grid {
+    grid-template-columns: repeat(4, 1fr);
+    grid-gap: 28px 24px;
+}
+
+.library-artists-virtual-mount,
+.library-songs-virtual-mount {
     position: relative;
-    padding: 24px 28px;
+    padding: 16px 8px 28px;
     overflow: visible;
 }
 
-.library-genres-grid {
-    grid-template-columns: repeat(4, 1fr);
-    grid-gap: 24px 16px;
-    justify-content: center;
+/* Single-column virtual song grid (rows pitched at SONG_ITEM_HEIGHT). */
+.library-song-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-auto-rows: 80px;
 }
 
-/* Album Grid Card (P7.5: consistent sizes) */
+/* Album Grid Card */
 .album-grid-card {
     cursor: pointer;
-    transition: transform 0.15s ease, opacity 0.15s ease;
-    /* V3-6: will-change applied dynamically to focused card only */
-    transform-origin: center center;
-    border-radius: 10px;
-    /* V3-4: `overflow: hidden` would clip the lift shadow, keep visible */
+    border-radius: 12px;
     overflow: visible;
     min-width: 0;
-    /* V3-6-fix3 GFX-1: force the card onto its own compositor layer at
-       rest so the focused scale doesn't double-rasterize the title text
-       on Tizen 5.0 (Chromium 63 glyph-cache "ghost" artefact). */
     transform: translateZ(0);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
@@ -2064,7 +2055,7 @@ html, body, #app {
     padding-top: 100%;
     position: relative;
     overflow: hidden;
-    border-radius: 8px;
+    border-radius: 10px;
 }
 
 .album-grid-card .album-art-fill > img,
@@ -2077,27 +2068,12 @@ html, body, #app {
     object-fit: cover;
 }
 
-/* V3-4: scale-up focus + subtle lift shadow on the art */
-.album-grid-card.focused {
-    outline: none !important;
-    box-shadow: none !important;
-    border-color: transparent !important;
-    /* V3-6-fix3 GFX-1: keep translateZ so the focused state stays on the
-       same compositor layer as the at-rest state (prevents text ghosting). */
-    transform: scale(1.08) translateZ(0);
-    z-index: 5;
-}
-
-.album-grid-card.focused .album-art-fill {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
 .album-grid-info {
-    padding: 8px 2px 4px;
+    padding: 12px 2px 4px;
 }
 
 .album-grid-title {
-    font-size: 12px;
+    font-size: var(--fs-body);
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -2106,12 +2082,12 @@ html, body, #app {
 }
 
 .album-grid-meta {
-    font-size: 11px;
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-top: 2px;
+    margin-top: 4px;
 }
 
 /* Artist Grid Card */
@@ -2121,39 +2097,20 @@ html, body, #app {
     align-items: center;
     text-align: center;
     cursor: pointer;
-    padding: 8px;
-    border-radius: 12px;
-    transition: transform 0.15s ease, opacity 0.15s ease;
-    /* V3-6: will-change applied dynamically */
-    transform-origin: center center;
+    padding: 10px;
+    border-radius: 14px;
     min-width: 0;
-    /* V3-4: allow lift shadow to extend past the card */
     overflow: visible;
-    /* V3-6-fix3 GFX-1: dedicated compositor layer at rest — see album card */
     transform: translateZ(0);
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
 }
 
-/* V3-4: scale-up focus, no border/outline */
-.artist-grid-card.focused {
-    outline: none !important;
-    box-shadow: none !important;
-    border-color: transparent !important;
-    /* V3-6-fix3 GFX-1: keep translateZ on focus to stay on the same layer */
-    transform: scale(1.08) translateZ(0);
-    z-index: 5;
-}
-
-.artist-grid-card.focused .artist-avatar {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
 .artist-grid-name {
-    font-size: 13px;
+    font-size: var(--fs-body);
     font-weight: 700;
     color: var(--text-primary);
-    margin-top: 10px;
+    margin-top: 14px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -2161,51 +2118,38 @@ html, body, #app {
 }
 
 .artist-grid-count {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
     margin-top: 4px;
 }
 
-/* Song List (V3-4: padding so focused rows don't clip on scale(1.02)) */
+/* Song List */
 .library-song-list {
-    padding: 12px 28px 20px;
-    max-width: 1200px;
+    padding: 8px 8px 24px;
+    max-width: 1400px;
     margin: 0 auto;
 }
 
 .song-row {
     display: flex;
     align-items: center;
-    padding: 12px 14px;
-    border-radius: 10px;
+    height: 72px;
+    padding: 0 18px;
+    border-radius: 12px;
     cursor: pointer;
-    transition: transform 0.12s ease;
-    /* V3-6: will-change applied dynamically */
-    transform-origin: left center;
+    box-sizing: border-box;
 }
 
 .song-row > * + * {
-    margin-left: 16px;
+    margin-left: 20px;
 }
 
-/* V3-6-fix GFX-4: focused songs match the top-nav pill (0.55). */
-.song-row.focused {
-    background: rgba(var(--accent-rgb), 0.55);
-    outline: none !important;
-    box-shadow: none !important;
-    border: none !important;
-    transform: scale(1.02);
-}
-
-.song-row.focused .song-row-title {
-    color: white;
-    font-weight: 600;
-}
+.song-row.focused .song-row-title { color: #fff; }
 
 .song-row-number {
-    width: 28px;
+    width: 34px;
     text-align: right;
-    font-size: 14px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
@@ -2217,7 +2161,7 @@ html, body, #app {
 }
 
 .song-row-title {
-    font-size: 15px;
+    font-size: var(--fs-body);
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -2226,33 +2170,28 @@ html, body, #app {
 }
 
 .song-row-meta {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-top: 2px;
+    margin-top: 3px;
 }
 
 .song-row-duration {
-    font-size: 14px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
 }
 
-/* V3-5: Genre card — gradient background (Apple Music style). Gradient
-   is set inline per-card from GENRE_GRADIENTS in library.js; no left
-   border, no dark card, just a bold colour block. */
+/* Genre card — gradient background block (scaled up) */
 .genre-card {
-    min-height: 96px;
-    padding: 20px 18px;
-    border-radius: 12px;
+    min-height: 150px;
+    padding: 24px 22px;
+    border-radius: 14px;
     border: none;
     cursor: pointer;
-    transition: transform 0.15s ease;
-    /* V3-6: will-change applied dynamically */
-    transform-origin: center center;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -2260,46 +2199,70 @@ html, body, #app {
     overflow: hidden;
 }
 
-.genre-card.focused {
-    outline: none !important;
-    transform: scale(1.08);
-    z-index: 5;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
 .genre-card-name {
-    font-size: 16px;
-    font-weight: 600;
-    color: white;
+    font-size: 24px;
+    font-weight: 700;
+    color: #fff;
 }
 
 .genre-card-count {
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.65);
-    margin-top: 2px;
+    font-size: var(--fs-meta);
+    color: rgba(255, 255, 255, 0.7);
+    margin-top: 4px;
+}
+
+/* Playlists grid card (gradient distinguishes from album art) */
+.library-playlists-grid .library-playlist-card {
+    width: auto;
+    min-height: 170px;
 }
 
 /* Library pagination loading indicator */
 .library-loading-more {
     text-align: center;
-    padding: 16px;
+    padding: 20px;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: var(--fs-meta);
 }
 
-/* Library empty state */
+/* Centered empty state (icon + message) */
+.library-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 100px 24px;
+    color: var(--text-muted);
+}
+
+.library-empty-icon {
+    width: 64px;
+    height: 64px;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+}
+
+.library-empty-msg {
+    font-size: var(--fs-section);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
 .library-empty {
     text-align: center;
     padding: 60px 24px;
+    font-size: var(--fs-body);
 }
 
 /* Genre Songs Header */
 .genre-songs-header {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
+    padding: 8px;
 }
 
 .genre-songs-title {
-    font-size: 20px;
+    font-size: var(--fs-section);
     font-weight: 700;
     color: var(--text-primary);
 }
@@ -2322,14 +2285,17 @@ html, body, #app {
     overflow: hidden;
 }
 
+/* REDESIGN: split-pane scaled up. Left art ~280px, type scale applied;
+   right tracklist with taller (72px) D-pad-friendly rows. Focus = the global
+   white ring (no scale / accent-fill overrides). */
 .album-detail-left {
-    width: 200px;
+    width: 280px;
     flex-shrink: 0;
     overflow: hidden;
 }
 
 .album-detail-art {
-    margin-bottom: 20px;
+    margin-bottom: var(--sp-md);
 }
 
 .album-detail-art .album-art {
@@ -2337,117 +2303,74 @@ html, body, #app {
 }
 
 .album-detail-title {
-    font-size: 26px;
+    font-size: var(--fs-detail-title);
     font-weight: 700;
     color: var(--text-primary);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     line-height: 1.2;
     word-wrap: break-word;
 }
 
 .album-detail-artist {
-    font-size: 17px;
+    font-size: var(--fs-body);
     font-weight: 600;
     color: var(--accent);
-    margin-bottom: 8px;
+    margin-bottom: 10px;
 }
 
 .album-detail-meta {
-    font-size: 14px;
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
-    margin-bottom: 16px;
-    padding-bottom: 16px;
+    margin-bottom: var(--sp-md);
+    padding-bottom: var(--sp-md);
 }
 
-.album-play-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    /* V3-6-fix GFX-3: inset by 8px each side so the rounded ends don't
-       clip against the left-panel edge. */
-    width: calc(100% - 16px);
-    margin-left: 8px;
-    margin-right: 8px;
-    box-sizing: border-box;
-    padding: 10px 16px;
-    background: rgba(255, 255, 255, 0.08);
-    border: none;
-    border-radius: 22px;
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 15px;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    margin-bottom: 10px;
-    transition: transform 0.15s ease;
-    will-change: transform;
-    transform-origin: center center;
-}
-
-.album-play-btn > * + * {
-    margin-left: 8px;
-}
-
-.album-play-btn.focused {
-    outline: none !important;
-    transform: scale(1.04);
-    background: var(--accent);
-    color: white;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-
+.album-play-btn,
 .album-shuffle-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    /* V3-6-fix GFX-3: inset by 8px each side. */
-    width: calc(100% - 16px);
-    margin-left: 8px;
-    margin-right: 8px;
+    width: 100%;
     box-sizing: border-box;
-    padding: 10px 16px;
-    background: rgba(255, 255, 255, 0.08);
+    padding: 14px 20px;
     border: none;
-    border-radius: 22px;
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 15px;
+    border-radius: 28px;
+    font-size: var(--fs-body);
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    transition: transform 0.15s ease;
-    will-change: transform;
-    transform-origin: center center;
 }
 
+.album-play-btn {
+    background: #fff;
+    color: #111;
+    margin-bottom: var(--sp-sm);
+}
+
+.album-shuffle-btn {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+
+.album-play-btn > * + *,
 .album-shuffle-btn > * + * {
-    margin-left: 8px;
+    margin-left: 10px;
 }
 
-.album-shuffle-btn.focused {
-    outline: none !important;
-    transform: scale(1.04);
-    background: var(--accent);
-    color: white;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-
-/* Tracklist — the ONLY scrollable area in album detail.
-   V3-4: padding-right gives focused rows (scale(1.02), transform-origin:
-   left center) room to grow rightward without being clipped by overflow-x:
-   hidden. */
+/* Tracklist — the ONLY scrollable area in album detail. */
 .album-detail-right {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
     min-width: 0;
-    padding-bottom: 20px;
-    padding-right: 40px;
+    padding-bottom: var(--sp-md);
+    padding-right: var(--sp-lg);
     position: relative;
-    margin-left: 48px;
+    margin-left: var(--sp-xl);
 }
 
 .album-tracklist-label {
-    font-size: 14px;
+    font-size: var(--fs-meta);
     font-weight: 600;
     color: var(--text-muted);
     letter-spacing: 1px;
@@ -2456,55 +2379,44 @@ html, body, #app {
 }
 
 .album-tracklist-duration {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
-    margin-bottom: 16px;
+    margin-bottom: var(--sp-md);
 }
 
 .track-row {
     display: flex;
     align-items: center;
-    padding: 12px 14px;
-    border-radius: 10px;
+    height: 72px;
+    padding: 0 18px;
+    border-radius: 12px;
     cursor: pointer;
-    transition: transform 0.12s ease;
-    /* V3-6: will-change applied dynamically */
-    transform-origin: left center;
+    box-sizing: border-box;
 }
 
 .track-row > * + * {
     margin-left: 16px;
 }
 
-/* V3-6-fix GFX-4: focused tracks match the top-nav pill (0.55). */
-.track-row.focused {
-    background: rgba(var(--accent-rgb), 0.55);
-    outline: none !important;
-    box-shadow: none !important;
-    border: none !important;
-    transform: scale(1.02);
-}
-
 .track-row.focused .track-row-title {
-    color: white;
-    font-weight: 600;
+    color: #fff;
 }
 
 .track-row-number {
-    width: 28px;
+    width: 32px;
     text-align: right;
-    font-size: 14px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
 }
 
 .track-row-eq {
-    width: 28px;
+    width: 32px;
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    height: 20px;
+    height: 22px;
     flex-shrink: 0;
 }
 
@@ -2514,7 +2426,7 @@ html, body, #app {
 
 .track-row-title {
     flex: 1;
-    font-size: 15px;
+    font-size: var(--fs-body);
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -2528,7 +2440,7 @@ html, body, #app {
 }
 
 .track-row-duration {
-    font-size: 14px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
@@ -2560,10 +2472,10 @@ html, body, #app {
 }
 
 .search-heading {
-    font-size: 20px;
+    font-size: var(--fs-section);
     font-weight: 700;
     color: var(--text-primary);
-    margin-bottom: 18px;
+    margin-bottom: var(--sp-md);
 }
 
 /* Search Input Bar */
@@ -2572,9 +2484,9 @@ html, body, #app {
     align-items: center;
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px 16px;
-    margin-bottom: 20px;
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: var(--sp-lg);
 }
 
 .search-input-bar > * + * {
@@ -2582,7 +2494,7 @@ html, body, #app {
 }
 
 .search-input-text {
-    font-size: 18px;
+    font-size: 24px;
     color: var(--text-muted);
     flex: 1;
     min-width: 0;
@@ -2629,16 +2541,14 @@ html, body, #app {
     justify-content: center;
     background: rgba(255, 255, 255, 0.06);
     border: none;
-    border-radius: 8px;
-    color: var(--text-secondary);
-    font-size: 18px;
+    border-radius: 10px;
+    color: var(--text-primary);
+    font-size: 24px;
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    padding: 14px 0;
-    min-height: 48px;
-    transition: transform 0.12s ease;
-    /* V3-6: will-change applied dynamically (35+ keyboard keys visible) */
+    padding: 16px 0;
+    min-height: 60px;
 }
 
 .kb-key.focused {
@@ -2657,17 +2567,15 @@ html, body, #app {
     justify-content: center;
     background: rgba(255, 255, 255, 0.06);
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     color: var(--text-secondary);
-    font-size: 14px;
+    font-size: var(--fs-meta);
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    padding: 14px 0;
-    min-height: 48px;
+    padding: 16px 0;
+    min-height: 60px;
     letter-spacing: 2px;
-    transition: transform 0.12s ease;
-    will-change: transform;
 }
 
 .kb-space.focused {
@@ -2690,16 +2598,14 @@ html, body, #app {
     justify-content: center;
     background: rgba(255, 255, 255, 0.06);
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     color: var(--text-secondary);
-    font-size: 15px;
+    font-size: var(--fs-meta);
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    padding: 14px 0;
-    min-height: 48px;
-    transition: transform 0.12s ease;
-    will-change: transform;
+    padding: 16px 0;
+    min-height: 60px;
 }
 
 .kb-del.focused {
@@ -2723,33 +2629,30 @@ html, body, #app {
 }
 
 .search-section-label {
-    font-size: 14px;
+    font-size: var(--fs-meta);
     font-weight: 600;
     color: var(--text-muted);
     letter-spacing: 1px;
     text-transform: uppercase;
-    margin-bottom: 16px;
+    margin-bottom: var(--sp-md);
 }
 
 /* Quick Access Grid */
 .search-quickaccess-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    grid-gap: 12px;
+    grid-gap: 16px;
 }
 
 /* V3-6-fix GFX-5: Quick Access tile — gradient block + label, mirrors the
    Library → Genres tile style. Background gradient is set inline per-tile
    from QA_ITEMS in search.js. */
 .search-qa-tile {
-    min-height: 96px;
-    padding: 20px 18px;
-    border-radius: 12px;
+    min-height: 120px;
+    padding: 24px 22px;
+    border-radius: 14px;
     border: none;
     cursor: pointer;
-    transition: transform 0.15s ease;
-    /* V3-6: will-change applied dynamically */
-    transform-origin: center center;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
@@ -2757,15 +2660,8 @@ html, body, #app {
     overflow: hidden;
 }
 
-.search-qa-tile.focused {
-    outline: none !important;
-    transform: scale(1.08);
-    z-index: 5;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-}
-
 .search-qa-tile-name {
-    font-size: 16px;
+    font-size: var(--fs-body);
     font-weight: 600;
     color: white;
 }
@@ -2774,30 +2670,19 @@ html, body, #app {
 .search-result-item {
     display: flex;
     align-items: center;
-    padding: 10px 12px;
-    border-radius: 10px;
+    height: 72px;
+    padding: 0 16px;
+    border-radius: 12px;
     cursor: pointer;
-    transition: transform 0.12s ease;
-    /* V3-6: will-change applied dynamically */
-    transform-origin: left center;
+    box-sizing: border-box;
 }
 
 .search-result-item > * + * {
-    margin-left: 14px;
-}
-
-/* V3-6-fix GFX-4: focused search results match the top-nav pill (0.55). */
-.search-result-item.focused {
-    background: rgba(var(--accent-rgb), 0.55);
-    outline: none !important;
-    box-shadow: none !important;
-    border: none !important;
-    transform: scale(1.02);
+    margin-left: 16px;
 }
 
 .search-result-item.focused .search-result-title {
-    color: white;
-    font-weight: 600;
+    color: #fff;
 }
 
 .search-result-info {
@@ -2806,7 +2691,7 @@ html, body, #app {
 }
 
 .search-result-title {
-    font-size: 15px;
+    font-size: var(--fs-body);
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
@@ -2815,7 +2700,7 @@ html, body, #app {
 }
 
 .search-result-meta {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -2824,7 +2709,7 @@ html, body, #app {
 }
 
 .search-result-duration {
-    font-size: 14px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
     font-variant-numeric: tabular-nums;
     flex-shrink: 0;
@@ -2837,7 +2722,7 @@ html, body, #app {
     justify-content: center;
     padding: 60px 24px;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: var(--fs-body);
     text-align: center;
 }
 
@@ -3012,22 +2897,22 @@ html, body, #app {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 16px;
-    padding: 32px;
-    max-width: 360px;
+    padding: 40px;
+    max-width: 460px;
     text-align: center;
 }
 
 .settings-confirm-title {
-    font-size: 18px;
+    font-size: var(--fs-detail-title);
     font-weight: 700;
     color: var(--text-primary);
-    margin-bottom: 10px;
+    margin-bottom: var(--sp-sm);
 }
 
 .settings-confirm-message {
-    font-size: 14px;
+    font-size: var(--fs-body);
     color: var(--text-secondary);
-    margin-bottom: 24px;
+    margin-bottom: var(--sp-lg);
     line-height: 1.5;
 }
 
@@ -3041,43 +2926,37 @@ html, body, #app {
 }
 
 .settings-confirm-cancel {
-    padding: 10px 24px;
+    padding: 14px 32px;
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: var(--fs-body);
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    transition: transform 0.15s ease;
-    will-change: transform;
 }
 
 .settings-confirm-cancel.focused {
     outline: none !important;
-    transform: scale(1.04);
     background: var(--accent);
     color: white;
 }
 
 .settings-confirm-logout {
-    padding: 10px 24px;
+    padding: 14px 32px;
     background: rgba(239, 68, 68, 0.15);
     border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 10px;
+    border-radius: 12px;
     color: #ef4444;
-    font-size: 14px;
+    font-size: var(--fs-body);
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    transition: transform 0.15s ease;
-    will-change: transform;
 }
 
 .settings-confirm-logout.focused {
     outline: none !important;
-    transform: scale(1.04);
     background: rgba(239, 68, 68, 0.25);
 }
 
@@ -3086,14 +2965,14 @@ html, body, #app {
    ============================================ */
 .sonance-toast {
     position: fixed;
-    bottom: 196px; /* 76px NP bar + 28px hint bar + 92px spacing */
+    bottom: 96px; /* clears the colour-hint bar; bottom now-playing bar removed */
     left: 50%;
     background: rgba(0, 0, 0, 0.85);
     color: #fff;
-    font-size: 14px;
+    font-size: var(--fs-body);
     font-family: inherit;
-    padding: 10px 22px;
-    border-radius: 24px;
+    padding: 14px 28px;
+    border-radius: 28px;
     z-index: 9000;
     pointer-events: none;
     opacity: 0;
@@ -3111,13 +2990,18 @@ html, body, #app {
    Colour Button Hint Bar
    ============================================ */
 .colour-hint-bar {
-    height: 28px;
-    background: rgba(255, 255, 255, 0.03);
-    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    height: 40px;
+    padding: 0 24px;
+    background: rgba(var(--bg-elevated-rgb), 0.92);
+    border-radius: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
     opacity: 0;
     transition: opacity 0.2s ease;
     pointer-events: none;
@@ -3141,8 +3025,8 @@ html, body, #app {
 }
 
 .colour-hint-dot {
-    width: 8px;
-    height: 8px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     flex-shrink: 0;
 }
@@ -3153,7 +3037,7 @@ html, body, #app {
 .colour-hint-dot.blue { background: #3b82f6; }
 
 .colour-hint-label {
-    font-size: 12px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
     white-space: nowrap;
 }
@@ -3178,23 +3062,23 @@ html, body, #app {
     background: rgba(30, 30, 38, 0.95);
     border: 1px solid var(--border);
     border-radius: 16px;
-    padding: 32px;
-    max-width: 400px;
+    padding: 40px;
+    max-width: 480px;
     width: 90%;
     text-align: center;
 }
 
 .exit-card-title {
-    font-size: 20px;
+    font-size: var(--fs-detail-title);
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 8px;
+    margin-bottom: var(--sp-sm);
 }
 
 .exit-card-subtitle {
-    font-size: 14px;
+    font-size: var(--fs-body);
     color: var(--text-secondary);
-    margin-bottom: 28px;
+    margin-bottom: var(--sp-lg);
 }
 
 .exit-card-buttons {
@@ -3203,37 +3087,33 @@ html, body, #app {
 }
 
 .exit-card-buttons > * + * {
-    margin-left: 12px;
+    margin-left: var(--sp-sm);
 }
 
 .exit-btn {
-    padding: 10px 28px;
+    padding: 14px 32px;
     border: none;
-    border-radius: 24px;
-    font-size: 15px;
+    border-radius: 28px;
+    font-size: var(--fs-body);
     font-weight: 600;
     cursor: pointer;
     font-family: inherit;
     background: rgba(255, 255, 255, 0.08);
     color: rgba(255, 255, 255, 0.8);
-    transition: transform 0.15s ease;
-    will-change: transform;
 }
 
 .exit-btn-cancel.focused,
 .exit-btn-exit.focused {
     outline: none !important;
-    transform: scale(1.06);
     background: var(--accent);
     color: white;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 /* ============================================
-   Now Playing Bar — opacity-based show/hide (V3-3 fix 5)
+   Mini player — opacity-based show/hide
    ============================================ */
-#now-playing-bar {
-    transition: opacity 0.2s ease;
+#mini-player {
+    transition: opacity var(--xfade) ease;
     will-change: opacity;
     opacity: 1;
 }
@@ -3270,12 +3150,14 @@ html, body, #app {
    Layout-triggering properties (width/padding/font-size)
    snap instantly — never transitioned.
    ============================================ */
+/* REDESIGN: always-visible 50/50 split. Left = art + info + controls + the
+   Lyrics/Up Next tab pair; right = whichever view (lyrics scroller or Up Next
+   list) the active tab selects. No slide-in — the right pane is permanent. */
 .np-layout {
     position: relative;
     z-index: 3;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    align-items: stretch;
     width: 100%;
     height: 100%;
 }
@@ -3286,63 +3168,162 @@ html, body, #app {
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: 480px;
-    max-width: 100%;
+    justify-content: center;
+    width: 50%;
     flex-shrink: 0;
-    padding: 20px;
+    padding: var(--sp-xl) var(--sp-lg);
     box-sizing: border-box;
-    transform: translateX(0);
-    transition: transform 0.25s ease;
-    /* V3-6-fix4 PERF-4: will-change applied dynamically only during the
-       lyrics-panel open/close transition (see nowplaying.js). */
 }
 
-/* Slide .np-left from centred to the left column when lyrics open.
-   .np-layout is full-width. With .np-left at 480px centred,
-   shifting by 320px - 50vw positions it ~80px from the left edge. */
-.np-layout.lyrics-active .np-left {
-    transform: translateX(calc(320px - 50vw));
-}
-
-/* Album art + title/subtitle resize INSTANTLY (no transition on size).
-   The container sliding via translateX is what reads as motion. */
-.np-layout.lyrics-active .np-screen-art,
-.np-layout.lyrics-active .np-screen-art-inner {
-    width: 220px;
-    height: 220px;
-}
-
-.np-layout.lyrics-active .np-screen-title {
-    font-size: 22px;
-}
-
-.np-layout.lyrics-active .np-screen-subtitle {
-    font-size: 15px;
-}
-
-.np-lyrics-panel {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 55%;
-    padding: 0 40px 0 48px;
+.np-right {
+    position: relative;
+    z-index: 3;
+    width: 50%;
+    flex-shrink: 0;
+    padding: var(--sp-xl) var(--sp-xl) var(--sp-xl) var(--sp-lg);
     box-sizing: border-box;
-    opacity: 0;
-    transform: translateX(100%);
-    transition: transform 0.25s ease, opacity 0.2s ease;
-    /* V3-6-fix4 PERF-4: will-change applied dynamically. */
     overflow: hidden;
-    pointer-events: none;
     display: flex;
     flex-direction: column;
     justify-content: center;
 }
 
-.np-layout.lyrics-active .np-lyrics-panel {
-    transform: translateX(0);
-    opacity: 1;
-    pointer-events: auto;
+/* Lyrics view fills the right pane and centres its scroller vertically. */
+.np-lyrics-view {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+}
+
+/* --- Lyrics / Up Next toggle pair (separated from playback controls) --- */
+.np-tabs {
+    display: flex;
+    justify-content: center;
+    margin-top: var(--sp-lg);
+}
+
+.np-tabs > * + * {
+    margin-left: var(--sp-sm);
+}
+
+.np-tab {
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: var(--fs-body);
+    font-weight: 600;
+    padding: 12px 28px;
+    border-radius: 999px;
+    font-family: inherit;
+}
+
+.np-tab.is-active {
+    background: var(--accent);
+    color: #ffffff;
+}
+
+.np-tab.is-unavailable {
+    opacity: 0.4;
+}
+
+/* --- Up Next view (REDESIGN — numbered list w/ heading + durations) --- */
+.np-upnext-view {
+    width: 100%;
+    /* Shorter than the full pane so .np-right's vertical centring drops the
+       heading clear of the fixed top nav bar instead of sliding under it. */
+    height: 84%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.np-upnext-heading {
+    font-size: var(--fs-section);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--sp-md);
+    flex-shrink: 0;
+}
+
+.np-upnext-list {
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 8px;
+    box-sizing: border-box;
+}
+
+.np-upnext-row {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.np-upnext-row > * + * {
+    margin-left: var(--sp-md);
+}
+
+.np-upnext-index {
+    flex-shrink: 0;
+    width: 32px;
+    text-align: center;
+    font-size: 22px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.np-upnext-thumb {
+    width: 84px;
+    height: 84px;
+    flex-shrink: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--bg-card);
+}
+
+.np-upnext-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.np-upnext-title {
+    font-size: 26px;
+    color: var(--text-primary);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.np-upnext-artist {
+    font-size: 18px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 4px;
+}
+
+.np-upnext-duration {
+    flex-shrink: 0;
+    font-size: 18px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.np-upnext-empty {
+    color: var(--text-muted);
+    font-size: var(--fs-body);
+    text-align: center;
+    padding: var(--sp-xl) 0;
 }
 
 .np-lyrics-scroll-wrapper {
@@ -3412,25 +3393,6 @@ html, body, #app {
     padding: 24px 0;
 }
 
-/* Lyrics button in transport controls */
-.np-ctrl-lyrics {
-    color: var(--text-secondary);
-}
-
-.np-ctrl-lyrics.focused {
-    color: var(--accent);
-}
-
-/* When the panel is open, indicate state with accent colour even unfocused */
-.np-ctrl-lyrics.is-active {
-    color: var(--accent);
-}
-
-/* Unavailable state: dim and not focusable */
-.np-ctrl-lyrics.is-unavailable {
-    display: none;
-}
-
 /* ============================================
    Now Playing Blur Background (P5.3)
    ============================================ */
@@ -3458,7 +3420,7 @@ html, body, #app {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(10, 10, 12, 0.55);
+    background: rgba(var(--bg-primary-rgb), 0.62);
     z-index: 1;
     pointer-events: none;
 }
@@ -3584,8 +3546,11 @@ html, body, #app {
     overflow: hidden;
 }
 
+/* REDESIGN: split-pane scaled up. Left avatar ~240px + name + Play All /
+   Shuffle All; right discography + bio + similar-artist circles (~110px).
+   Focus = the global white ring (no scale / accent-fill overrides). */
 .artist-detail-left {
-    width: 220px;
+    width: 300px;
     flex-shrink: 0;
     overflow: hidden;
     display: flex;
@@ -3593,14 +3558,13 @@ html, body, #app {
     align-items: flex-start;
 }
 
-
 .artist-detail-photo {
-    width: 200px;
-    height: 200px;
+    width: 240px;
+    height: 240px;
     border-radius: 50%;
     overflow: hidden;
     flex-shrink: 0;
-    margin-bottom: 16px;
+    margin-bottom: var(--sp-md);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     background: var(--bg-card);
 }
@@ -3612,60 +3576,55 @@ html, body, #app {
 }
 
 .artist-detail-name {
-    font-size: 22px;
+    font-size: var(--fs-detail-title);
     font-weight: 700;
     color: var(--text-primary);
     line-height: 1.2;
-    max-height: 56px;
+    max-height: 80px;
     overflow: hidden;
     word-wrap: break-word;
     width: 100%;
 }
 
 .artist-detail-count {
-    font-size: 14px;
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
-    margin-top: 4px;
-    margin-bottom: 24px;
+    margin-top: 6px;
+    margin-bottom: var(--sp-lg);
     width: 100%;
 }
 
-.artist-play-btn {
+.artist-play-btn,
+.artist-shuffle-btn {
     display: flex;
     align-items: center;
     justify-content: center;
     align-self: stretch;
-    /* V3-6-fix GFX-3: inset by 8px each side so the pill's rounded ends
-       sit comfortably inside the left panel. */
-    width: calc(100% - 16px);
-    margin-left: 8px;
-    margin-right: 8px;
+    width: 100%;
     box-sizing: border-box;
-    padding: 10px 16px;
-    background: rgba(255, 255, 255, 0.08);
+    padding: 14px 20px;
     border: none;
-    border-radius: 22px;
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 15px;
+    border-radius: 28px;
+    font-size: var(--fs-body);
     font-weight: 600;
     font-family: inherit;
     cursor: pointer;
-    margin-bottom: 10px;
-    transition: transform 0.15s ease;
-    will-change: transform;
-    transform-origin: center center;
 }
 
-.artist-play-btn > * + * {
-    margin-left: 8px;
+.artist-play-btn {
+    background: #fff;
+    color: #111;
+    margin-bottom: var(--sp-sm);
 }
 
-.artist-play-btn.focused {
-    outline: none !important;
-    transform: scale(1.04);
-    background: var(--accent);
-    color: white;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+.artist-shuffle-btn {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+
+.artist-play-btn > * + *,
+.artist-shuffle-btn > * + * {
+    margin-left: 10px;
 }
 
 .artist-play-btn:disabled,
@@ -3674,74 +3633,39 @@ html, body, #app {
     cursor: default;
 }
 
-.artist-shuffle-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    align-self: stretch;
-    /* V3-6-fix GFX-3: inset by 8px each side. */
-    width: calc(100% - 16px);
-    margin-left: 8px;
-    margin-right: 8px;
-    box-sizing: border-box;
-    padding: 10px 16px;
-    background: rgba(255, 255, 255, 0.08);
-    border: none;
-    border-radius: 22px;
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 15px;
-    font-weight: 600;
-    font-family: inherit;
-    cursor: pointer;
-    transition: transform 0.15s ease;
-    will-change: transform;
-    transform-origin: center center;
-}
-
-.artist-shuffle-btn > * + * {
-    margin-left: 8px;
-}
-
-.artist-shuffle-btn.focused {
-    outline: none !important;
-    transform: scale(1.04);
-    background: var(--accent);
-    color: white;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-
 /* Right panel — scrollable */
 .artist-detail-right {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
     min-width: 0;
-    padding-bottom: 24px;
-    margin-left: 48px;
+    padding-bottom: var(--sp-lg);
+    padding-right: var(--sp-md);
+    margin-left: var(--sp-xl);
 }
 
 .artist-section + .artist-section {
-    margin-top: 32px;
+    margin-top: var(--sp-lg);
 }
 
 .artist-section-label {
-    font-size: 14px;
+    font-size: var(--fs-meta);
     font-weight: 600;
     color: var(--text-muted);
     letter-spacing: 1px;
     text-transform: uppercase;
-    margin-bottom: 16px;
+    margin-bottom: var(--sp-md);
 }
 
 .artist-section-bio .artist-section-label,
 .artist-section-similar .artist-section-label {
-    margin-bottom: 12px;
+    margin-bottom: var(--sp-sm);
 }
 
 .artist-section-empty {
-    font-size: 14px;
+    font-size: var(--fs-meta);
     color: var(--text-muted);
-    padding: 12px 0;
+    padding: var(--sp-sm) 0;
 }
 
 /* Discography rows */
@@ -3752,32 +3676,15 @@ html, body, #app {
 .artist-album-row {
     display: flex;
     align-items: center;
-    padding: 8px;
-    border-radius: 10px;
+    padding: 10px;
+    border-radius: 12px;
     cursor: pointer;
-    margin-bottom: 12px;
+    margin-bottom: var(--sp-sm);
     background: transparent;
-    border: 1px solid transparent;
-    transition: transform 0.12s ease;
-    /* V3-6: will-change applied dynamically */
-    transform-origin: left center;
-}
-
-/* V3-6-fix5 FIX-1: focus uses accent (matches song/track rows). */
-.artist-album-row.focused {
-    background: rgba(var(--accent-rgb), 0.55);
-    border-color: transparent !important;
-    outline: none !important;
-    box-shadow: none !important;
-    transform: scale(1.03);
-}
-
-.artist-album-row.focused .artist-album-art {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
 .artist-album-row.focused .artist-album-title {
-    color: white;
+    color: #fff;
 }
 
 .artist-album-art {
@@ -3787,11 +3694,11 @@ html, body, #app {
 .artist-album-info {
     flex: 1;
     min-width: 0;
-    margin-left: 16px;
+    margin-left: var(--sp-md);
 }
 
 .artist-album-title {
-    font-size: 15px;
+    font-size: var(--fs-body);
     font-weight: 600;
     color: var(--text-primary);
     margin-bottom: 4px;
@@ -3801,7 +3708,7 @@ html, body, #app {
 }
 
 .artist-album-meta {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -3810,10 +3717,10 @@ html, body, #app {
 
 /* Biography */
 .artist-bio-text {
-    font-size: 14px;
+    font-size: var(--fs-body);
     color: var(--text-secondary);
     line-height: 1.6;
-    max-width: 720px;
+    max-width: 900px;
 }
 
 /* Similar Artists row */
@@ -3828,46 +3735,27 @@ html, body, #app {
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: 96px;
-    margin-right: 20px;
-    margin-bottom: 16px;
-    padding: 6px;
-    border-radius: 10px;
+    width: 140px;
+    margin-right: var(--sp-md);
+    margin-bottom: var(--sp-md);
+    padding: 8px;
+    border-radius: 12px;
     cursor: pointer;
-    border: 1px solid transparent;
     background: transparent;
-    transition: transform 0.15s ease;
-    /* V3-6: will-change applied dynamically */
-    transform-origin: center center;
-}
-
-/* V3-6-fix5 FIX-1: focus uses accent (matches song/track rows). */
-.artist-similar-card.focused {
-    background: rgba(var(--accent-rgb), 0.55) !important;
-    border-color: transparent !important;
-    outline: none !important;
-    box-shadow: none !important;
-    transform: scale(1.08);
-    z-index: 5;
-}
-
-.artist-similar-card.focused .artist-similar-avatar {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    border-radius: 50%;
 }
 
 .artist-similar-avatar {
-    width: 80px;
-    height: 80px;
-    margin-bottom: 8px;
+    width: 110px;
+    height: 110px;
+    margin-bottom: var(--sp-xs);
 }
 
 .artist-similar-name {
-    font-size: 13px;
+    font-size: var(--fs-meta);
     color: var(--text-primary);
     text-align: center;
     width: 100%;
-    max-height: 36px;
+    max-height: 44px;
     overflow: hidden;
     line-height: 1.3;
 }

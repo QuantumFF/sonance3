@@ -40,6 +40,17 @@ var FocusManager = (function() {
      * }
      */
     function registerZone(name, config) {
+        // REDESIGN: the 'nowplaying-bar' zone is now the top-left mini player,
+        // owned and registered once by the app shell (selector '.mini-player').
+        // Legacy per-screen code still re-registers it with the dead
+        // '.np-bar-btn' selector — ignore those so the mini-player zone is not
+        // clobbered. (The dead registrations are removed per-screen.)
+        if (name === 'nowplaying-bar' && config &&
+            typeof config.selector === 'string' &&
+            config.selector.indexOf('np-bar-btn') >= 0) {
+            return;
+        }
+
         // V3.7-fix20: make re-registration with the same selector + virtual
         // flag idempotent. The topnav zone, in particular, is re-registered
         // on logout/login round trips because clearContentZones() preserves
@@ -208,6 +219,11 @@ var FocusManager = (function() {
         _activeZone = name;
         if (index !== undefined) {
             _focusIndex[name] = index;
+        } else if (typeof _zones[name].getEntryIndex === 'function') {
+            // Zone declares where focus should land when entered without an
+            // explicit index (e.g. a tab strip returns to its active tab).
+            var entryIdx = _zones[name].getEntryIndex();
+            if (typeof entryIdx === 'number' && entryIdx >= 0) _focusIndex[name] = entryIdx;
         }
         _updateFocus();
     }
@@ -430,7 +446,12 @@ var FocusManager = (function() {
 
         // Determine target index in neighbor zone
         var targetIdx;
-        if (neighborName === 'topnav') {
+        if (typeof neighbor.getEntryIndex === 'function') {
+            // Zone dictates its own entry index (e.g. tab strip → active tab),
+            // overriding the directional first/last default below.
+            var gi = neighbor.getEntryIndex(direction);
+            targetIdx = (typeof gi === 'number' && gi >= 0) ? gi : (_focusIndex[neighborName] || 0);
+        } else if (neighborName === 'topnav') {
             // Returning to the top nav: always land on the nav item that matches
             // the current primary screen (remembered index), not the last item.
             targetIdx = _focusIndex[neighborName] || 0;

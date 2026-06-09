@@ -1,6 +1,7 @@
 /* ============================================
-   Sonance — Library Screen
-   Albums, Artists, Songs, Genres tabs
+   Sonance — Library Screen (REDESIGN)
+   Horizontal tab strip (Albums / Artists / Songs / Genres / Playlists),
+   contextual Shuffle button, 3-state Favourites filter, virtualized Songs.
    ============================================ */
 
 var LibraryScreen = (function() {
@@ -9,31 +10,52 @@ var LibraryScreen = (function() {
     var el = SonanceUtils.el;
     var log = SonanceUtils.log;
     var formatDuration = SonanceUtils.formatDuration;
+    var createStarSvg = SonanceUtils.createStarSvg;
+    var createSvg = SonanceUtils.createSvg;
+    var SVG_PATHS = SonanceUtils.SVG_PATHS;
 
     var _container = null;
     var _contentContainer = null;
-    var _activeTab = 'albums'; // persists across navigations
-    var _genreMode = false;    // true when showing genre songs
+    var _activeTab = 'albums';   // persists across navigations
+    var _favFilter = 'all';      // REDESIGN: 'all' | 'fav' | 'nofav' — persists across tabs
+    var _genreMode = false;
     var _currentGenre = null;
-    var _currentSongs = null;  // Track list for colour button support
-    var _albumLoader = null;   // PaginatedLoader for albums tab
-    var _artistsAll = null;    // V3-6-fix2: full artists list (chunked or virtual render)
-    var _artistsRenderedCount = 0; // chunked-render progress (≤80 artists path)
+    var _currentSongs = null;    // Track list for colour button + shuffle support
+    var _albumLoader = null;
+    var _lastAlbums = [];        // accumulated album list (for shuffle source)
+    var _lastArtists = [];       // (for shuffle source)
+    var _lastPlaylists = [];     // (for shuffle source)
+    var _artistsAll = null;
+    var _artistsRenderedCount = 0;
     var _artistsChunkRaf = null;
-    var _artistsChunkedZoneRegistered = false; // V3.7-fix9: zone registered once per chunked render
-    var _artistsVirtualGrid = null; // VirtualGrid instance when count > 80
+    var _artistsChunkedZoneRegistered = false;
+    var _artistsVirtualGrid = null;
+    var _songsVirtualGrid = null;
     var ARTISTS_VIRTUAL_THRESHOLD = 80;
     var ARTISTS_CHUNK_SIZE = 50;
-    var ARTIST_ITEM_HEIGHT = 180; // px — 100 avatar + name + count + 8px×2 padding + 24px row gap
-    var ARTIST_ITEM_MIN_WIDTH = 130;
+    var ARTIST_ITEM_HEIGHT = 252;   // card (~222) + 30px row gap; must match .library-artists-grid
+    var ARTIST_ITEM_MIN_WIDTH = 180; // must match minmax() in .library-artists-grid
+    var SONG_ITEM_HEIGHT = 80;
+    var SONGS_VIRTUAL_THRESHOLD = 40;
 
-    // V3-3 vertical sub-nav
+    var SHUFFLE_FETCH_CAP = 30;  // bound multi-fetch shuffle sources
+
     var LIBRARY_TABS = [
-        { key: 'albums',  label: 'Albums'  },
-        { key: 'artists', label: 'Artists' },
-        { key: 'songs',   label: 'Songs'   },
-        { key: 'genres',  label: 'Genres'  }
+        { key: 'albums',    label: 'Albums'    },
+        { key: 'artists',   label: 'Artists'   },
+        { key: 'songs',     label: 'Songs'     },
+        { key: 'genres',    label: 'Genres'    },
+        { key: 'playlists', label: 'Playlists' }
     ];
+
+    // Tabs that support the favourites filter (Genres + Playlists have no
+    // per-item starred concept).
+    function _tabHasFilter(key) {
+        return key === 'albums' || key === 'artists' || key === 'songs';
+    }
+    function _tabHasShuffle(key) {
+        return key !== 'genres';
+    }
 
     function _tabIndex(key) {
         for (var i = 0; i < LIBRARY_TABS.length; i++) {
@@ -41,12 +63,19 @@ var LibraryScreen = (function() {
         }
         return 0;
     }
+    function _tabLabel(key) {
+        for (var i = 0; i < LIBRARY_TABS.length; i++) {
+            if (LIBRARY_TABS[i].key === key) return LIBRARY_TABS[i].label;
+        }
+        return key;
+    }
 
-    // V3.7-fix10: single delegated click handler for the library content area.
-    // Routes to the right action based on which kind of card/row was clicked.
+    // =========================================
+    //  Delegated content click routing
+    // =========================================
+
     function _onContentClick(ev) {
         var t = ev.target;
-        // Album grid card (Albums tab)
         var albumCard = t.closest('.album-grid-card');
         if (albumCard) {
             var aid = albumCard.getAttribute('data-album-id');
@@ -54,53 +83,45 @@ var LibraryScreen = (function() {
             if (aid) App.navigateTo('album', { id: aid, title: atitle }, 'zoom-in');
             return;
         }
-        // Artist grid card (Artists tab — chunked + virtual)
         var artistCard = t.closest('.artist-grid-card');
         if (artistCard) {
             var artistId = artistCard.getAttribute('data-artist-id');
-            if (artistId) {
-                log('Library', 'Artist clicked: ' + artistId);
-                App.navigateTo('artist', { id: artistId }, 'zoom-in');
-            }
+            if (artistId) App.navigateTo('artist', { id: artistId }, 'zoom-in');
             return;
         }
-        // Song row (Songs tab + Genre songs)
+        var playlistCard = t.closest('.playlist-card');
+        if (playlistCard) {
+            var pid = playlistCard.getAttribute('data-playlist-id');
+            if (pid) App.navigateTo('playlists', { id: pid }, 'zoom-in');
+            return;
+        }
         var songRow = t.closest('.song-row');
         if (songRow) {
             var rawIdx = songRow.getAttribute('data-song-index');
             if (rawIdx !== null && _currentSongs && _currentSongs.length) {
                 var startIdx = parseInt(rawIdx, 10);
                 if (!isNaN(startIdx) && _currentSongs[startIdx]) {
-                    // V3.7-fix10: songs tab still kicks off player playback;
-                    // genre-songs tab navigates to album. Distinguish by the
-                    // genre-mode flag or by the presence of data-album-id.
                     var sAlbumId = songRow.getAttribute('data-album-id');
                     if (_genreMode && sAlbumId) {
                         var sAlbumTitle = songRow.getAttribute('data-album-title') || '';
-                        log('Library', 'Genre song clicked');
                         App.navigateTo('album', { id: sAlbumId, title: sAlbumTitle }, 'zoom-in');
                     } else {
-                        log('Library', 'Song clicked');
                         Player.playAlbum(_currentSongs, startIdx);
                     }
                 }
             }
             return;
         }
-        // Genre card (Genres tab)
         var genreCard = t.closest('.genre-card');
         if (genreCard) {
             var name = genreCard.getAttribute('data-genre');
             if (!name) return;
-            log('Library', 'Genre clicked: ' + name);
             var api = App.getApi();
             if (!api) return;
             _genreMode = true;
             _currentGenre = name;
             if (App.zoomContent) {
-                App.zoomContent(_contentContainer, function() {
-                    _loadGenreSongs(api, name);
-                }, 'in');
+                App.zoomContent(_contentContainer, function() { _loadGenreSongs(api, name); }, 'in');
             } else {
                 _loadGenreSongs(api, name);
             }
@@ -119,9 +140,9 @@ var LibraryScreen = (function() {
         var viewTop = container.scrollTop;
         var viewBottom = viewTop + container.clientHeight;
         if (elBottom > viewBottom) {
-            container.scrollTop = elBottom - container.clientHeight + 20;
+            container.scrollTop = elBottom - container.clientHeight + 24;
         } else if (elTop < viewTop) {
-            container.scrollTop = elTop - 20;
+            container.scrollTop = elTop - 24;
         }
     }
 
@@ -138,110 +159,290 @@ var LibraryScreen = (function() {
 
         var wrapper = el('div', { className: 'library-screen' });
 
-        // Vertical pill sub-nav (Albums / Artists / Songs / Genres)
-        var subnav = el('div', { className: 'library-subnav', id: 'library-subnav' });
+        // --- Header: horizontal tab strip (left) + actions (right) ---
+        var header = el('div', { className: 'library-header' });
 
-        // Sliding pill highlight — starts in 'selected' (grey) because on
-        // arrival focus is still on the top nav; it transitions to 'focused'
-        // (accent) once the user presses Down into the sub-nav.
-        var pill = el('div', { className: 'library-subnav-pill selected', id: 'library-subnav-pill' });
-        subnav.appendChild(pill);
-
+        var tabs = el('div', { className: 'library-tabs', id: 'library-tabs-strip' });
+        var pill = el('div', { className: 'library-tab-pill selected', id: 'library-tab-pill' });
+        tabs.appendChild(pill);
         LIBRARY_TABS.forEach(function(tab, i) {
             var item = el('div', {
-                className: 'library-subnav-item' + (tab.key === _activeTab ? ' selected' : ''),
+                className: 'library-tab' + (tab.key === _activeTab ? ' selected' : ''),
                 'data-tab': tab.key,
                 'data-index': String(i)
             }, tab.label);
-
-            item.addEventListener('click', function() {
-                _onSubNavItemClicked(tab.key);
-            });
-
-            subnav.appendChild(item);
+            item.addEventListener('click', function() { _onTabItemClicked(tab.key); });
+            tabs.appendChild(item);
         });
+        header.appendChild(tabs);
 
-        wrapper.appendChild(subnav);
+        var actions = el('div', { className: 'library-actions', id: 'library-actions' });
+        // Favourites filter (3-state)
+        var favBtn = el('button', { className: 'library-action library-fav-filter focusable', id: 'library-fav-filter' });
+        favBtn.addEventListener('click', _cycleFavFilter);
+        actions.appendChild(favBtn);
+        // Contextual shuffle
+        var shuffleBtn = el('button', { className: 'library-action library-shuffle focusable', id: 'library-shuffle' });
+        shuffleBtn.addEventListener('click', _onShuffleClicked);
+        actions.appendChild(shuffleBtn);
+        header.appendChild(actions);
 
-        // Content area for tab content — keeps `library-content` class for
-        // back-compat with existing scroll/padding rules; CSS now gives it a
-        // margin-left so the grid clears the sub-nav.
+        wrapper.appendChild(header);
+
         _contentContainer = el('div', { className: 'library-content', id: 'library-content' });
-        // V3.7-fix10: single delegated click handler for all grid cards/rows
-        // inside the content area, keyed off card class names + data-* attrs.
         _contentContainer.addEventListener('click', _onContentClick);
         wrapper.appendChild(_contentContainer);
 
         container.appendChild(wrapper);
 
-        // Position the pill once the items are on the DOM (deferred — offsets
-        // are 0 until layout completes). Read the `.selected` item from the
-        // DOM so that if focus has already entered the sub-nav and moved the
-        // pill synchronously (via onFocus), we don't clobber that with a
-        // stale `_activeTab`.
-        setTimeout(function() {
-            var items = document.querySelectorAll('.library-subnav-item');
-            var idx = -1;
-            for (var i = 0; i < items.length; i++) {
-                if (items[i].classList.contains('selected')) { idx = i; break; }
-            }
-            if (idx < 0) idx = _tabIndex(_activeTab);
-            _updateLibraryPill(idx, false);
-        }, 0);
+        _updateActionButtons();
+
+        setTimeout(function() { _updateTabPill(_tabIndex(_activeTab), false); }, 0);
 
         log('Library', 'Library screen rendered');
     }
 
     // =========================================
-    //  Sub-nav pill position + state
+    //  Tab pill (horizontal sliding highlight)
     // =========================================
 
-    function _updateLibraryPill(index, animate) {
-        var pill = document.getElementById('library-subnav-pill');
-        var items = document.querySelectorAll('.library-subnav-item');
+    function _updateTabPill(index, animate) {
+        var pill = document.getElementById('library-tab-pill');
+        var items = document.querySelectorAll('.library-tab');
         if (!items[index] || !pill) return;
 
-        var firstTop = items[0].offsetTop;
-        var itemTop = items[index].offsetTop - firstTop;
-        var itemHeight = items[index].offsetHeight;
-
-        if (itemHeight === 0) {
-            // Not yet laid out — retry next frame
-            setTimeout(function() { _updateLibraryPill(index, animate); }, 16);
+        var firstLeft = items[0].offsetLeft;
+        var itemLeft = items[index].offsetLeft - firstLeft;
+        var itemWidth = items[index].offsetWidth;
+        if (itemWidth === 0) {
+            setTimeout(function() { _updateTabPill(index, animate); }, 16);
             return;
         }
-
-        pill.style.top = firstTop + 'px';
-        pill.style.height = itemHeight + 'px';
-
-        if (animate) {
-            pill.style.transition = 'transform 0.2s ease';
-        } else {
-            pill.style.transition = 'none';
-        }
-        pill.style.transform = 'translateY(' + itemTop + 'px)';
+        pill.style.left = firstLeft + 'px';
+        pill.style.width = itemWidth + 'px';
+        pill.style.transition = animate ? 'transform 0.2s ease' : 'none';
+        pill.style.transform = 'translateX(' + itemLeft + 'px)';
     }
 
-    function _setLibraryPillState(state) {
-        var pill = document.getElementById('library-subnav-pill');
+    function _setTabPillState(state) {
+        var pill = document.getElementById('library-tab-pill');
         if (!pill) return;
         pill.classList.remove('focused', 'selected');
         pill.classList.add(state);
     }
 
-    function _markSubNavSelected(index) {
-        var items = document.querySelectorAll('.library-subnav-item');
+    function _markTabSelected(index) {
+        var items = document.querySelectorAll('.library-tab');
         for (var i = 0; i < items.length; i++) {
-            if (i === index) items[i].classList.add('selected');
-            else items[i].classList.remove('selected');
+            items[i].classList.toggle('selected', i === index);
         }
     }
 
-    function _onSubNavItemClicked(tabKey) {
-        // Clicking an item acts like Up/Down: focus the sub-nav and cross-fade.
-        var idx = _tabIndex(tabKey);
-        FocusManager.setActiveZone('library-subnav', idx, true);
-        // setActiveZone triggers onFocus which handles pill + content swap.
+    // The tab the highlight pill is currently previewing (may differ from the
+    // committed/active tab, which only changes on Enter/Down).
+    function _markTabFocused(index) {
+        var items = document.querySelectorAll('.library-tab');
+        for (var i = 0; i < items.length; i++) {
+            items[i].classList.toggle('focused-tab', i === index);
+        }
+    }
+
+    function _focusedTabIndex() {
+        var snap = FocusManager.snapshot ? FocusManager.snapshot() : null;
+        return (snap && snap.zone === 'library-tabs') ? snap.index : _tabIndex(_activeTab);
+    }
+
+    function _actionsHasVisible() {
+        var all = document.querySelectorAll('#library-actions .library-action');
+        for (var i = 0; i < all.length; i++) {
+            if (all[i].style.display !== 'none') return true;
+        }
+        return false;
+    }
+
+    // Park the highlight pill back on the active (committed) tab — used when
+    // focus leaves the strip without committing a different tab.
+    function _restTabPill() {
+        _setTabPillState('selected');
+        _updateTabPill(_tabIndex(_activeTab), false);
+        _markTabFocused(-1);
+    }
+
+    // Commit the focused tab: switch content if it differs from the active tab,
+    // then drop focus into the content grid once it's (re)registered. Reaching
+    // the right-side actions never commits a tab, so they stay contextual to
+    // whatever tab is active.
+    function _commitFocusedTab(idx) {
+        var key = LIBRARY_TABS[idx] ? LIBRARY_TABS[idx].key : _activeTab;
+        if (key === _activeTab) { _enterLibraryContent(); return; }
+        _genreMode = false;
+        _currentGenre = null;
+        // Reflect the new committed tab immediately (white label + parked pill),
+        // ahead of the async content load.
+        _markTabSelected(_tabIndex(key));
+        _setTabPillState('selected');
+        _updateTabPill(_tabIndex(key), true);
+        _markTabFocused(-1);
+        FocusManager.unregisterZone('library-grid');
+        _switchTabAnimated(key);
+        FocusManager.onceZoneRegistered('library-grid', function() {
+            if (_activeTab !== key) return;
+            if (FocusManager.getActiveZone() !== 'library-tabs') return;
+            FocusManager.setActiveZone('library-grid', 0, true);
+        });
+    }
+
+    function _onTabItemClicked(tabKey) {
+        FocusManager.setActiveZone('library-tabs', _tabIndex(tabKey), true);
+        _commitFocusedTab(_tabIndex(tabKey));
+    }
+
+    // =========================================
+    //  Favourites filter + Shuffle action buttons
+    // =========================================
+
+    function _favLabel() {
+        if (_favFilter === 'fav') return 'Favourites';
+        if (_favFilter === 'nofav') return 'Non-favourites';
+        return 'All';
+    }
+
+    function _updateActionButtons() {
+        var favBtn = document.getElementById('library-fav-filter');
+        var shuffleBtn = document.getElementById('library-shuffle');
+
+        if (favBtn) {
+            var showFilter = _tabHasFilter(_activeTab) && !_genreMode;
+            favBtn.style.display = showFilter ? '' : 'none';
+            favBtn.textContent = '';
+            favBtn.appendChild(createStarSvg(_favFilter === 'fav'));
+            favBtn.appendChild(el('span', { className: 'library-action-label' }, _favLabel()));
+            favBtn.classList.toggle('is-active', _favFilter !== 'all');
+            favBtn.classList.toggle('is-nofav', _favFilter === 'nofav');
+        }
+        if (shuffleBtn) {
+            var showShuffle = _tabHasShuffle(_activeTab) && !_genreMode;
+            shuffleBtn.style.display = showShuffle ? '' : 'none';
+            shuffleBtn.textContent = '';
+            var sIcon = createSvg(SVG_PATHS.shuffle);
+            sIcon.style.width = '24px';
+            sIcon.style.height = '24px';
+            sIcon.style.fill = 'currentColor';
+            shuffleBtn.appendChild(sIcon);
+            shuffleBtn.appendChild(el('span', { className: 'library-action-label' }, 'Shuffle ' + _tabLabel(_activeTab)));
+        }
+    }
+
+    function _cycleFavFilter() {
+        _favFilter = _favFilter === 'all' ? 'fav' : (_favFilter === 'fav' ? 'nofav' : 'all');
+        _updateActionButtons();
+        // Re-register the actions zone (button count is unchanged but the
+        // selector cache should refresh) and reload the current tab.
+        FocusManager.invalidateZone && FocusManager.invalidateZone('library-actions');
+        _loadTabContent();
+    }
+
+    function _onShuffleClicked() {
+        var api = App.getApi();
+        if (!api) return;
+        // Albums tab shuffles whole albums: the album *order* is randomised but
+        // each album's tracks stay in sequence and play album-after-album.
+        if (_activeTab === 'albums') { _shuffleAlbumsWhole(api); return; }
+        _collectShuffleTracks(api).then(function(tracks) {
+            if (tracks && tracks.length) {
+                Player.shuffleQueue(tracks);
+                App.showToast('Shuffling ' + tracks.length + ' tracks');
+            } else {
+                App.showToast('Nothing to shuffle');
+            }
+        }).catch(function(err) {
+            log('Library', 'Shuffle failed: ' + (err && err.message));
+        });
+    }
+
+    // Albums tab: shuffle the *album order* (respecting the favourites filter),
+    // then play each album's tracks in sequence — one whole album after another.
+    function _shuffleAlbumsWhole(api) {
+        var albums = _filterByFav(_lastAlbums, 'album').slice();
+        if (!albums.length) { App.showToast('Nothing to shuffle'); return; }
+        // Fisher–Yates on the album list.
+        for (var i = albums.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var tmp = albums[i]; albums[i] = albums[j]; albums[j] = tmp;
+        }
+        albums = albums.slice(0, SHUFFLE_FETCH_CAP);
+        // Fetch songs in shuffled-album order; Promise.all preserves array order,
+        // so in-album track order is kept and albums stay contiguous.
+        Promise.all(albums.map(function(a) {
+            return api.getAlbum(a.id).then(function(full) { return (full && full.song) || []; })
+                .catch(function() { return []; });
+        })).then(function(arrs) {
+            var tracks = _flatten(arrs);
+            if (!tracks.length) { App.showToast('Nothing to shuffle'); return; }
+            // Play the album-ordered queue with shuffle mode OFF, otherwise
+            // playAlbum would re-scramble the individual songs.
+            var pstate = Player.getState && Player.getState();
+            if (pstate && pstate.shuffle) Player.toggleShuffle();
+            Player.playAlbum(tracks, 0);
+            App.showToast('Shuffling ' + albums.length + ' albums');
+        }).catch(function(err) {
+            log('Library', 'Album shuffle failed: ' + (err && err.message));
+        });
+    }
+
+    // Build a track pool from the current tab's (favourites-filtered) items,
+    // bounded by SHUFFLE_FETCH_CAP secondary fetches.
+    function _collectShuffleTracks(api) {
+        // Albums are handled separately (album-level shuffle) in _shuffleAlbumsWhole.
+        if (_activeTab === 'songs') {
+            return Promise.resolve(_filterByFav(_currentSongs || [], 'song'));
+        }
+        if (_activeTab === 'playlists') {
+            var pls = _lastPlaylists.slice(0, SHUFFLE_FETCH_CAP);
+            return Promise.all(pls.map(function(p) {
+                return api.getPlaylist(p.id).then(function(full) { return (full && full.entry) || []; })
+                    .catch(function() { return []; });
+            })).then(_flatten);
+        }
+        if (_activeTab === 'artists') {
+            var artists = _filterByFav(_lastArtists, 'artist').slice(0, SHUFFLE_FETCH_CAP);
+            // For each artist take their first album's songs (bounded).
+            return Promise.all(artists.map(function(ar) {
+                return api.getArtist(ar.id).then(function(full) {
+                    var alb = (full && full.album && full.album[0]) || null;
+                    if (!alb) return [];
+                    return api.getAlbum(alb.id).then(function(fa) { return (fa && fa.song) || []; })
+                        .catch(function() { return []; });
+                }).catch(function() { return []; });
+            })).then(_flatten);
+        }
+        return Promise.resolve([]);
+    }
+
+    function _flatten(arrs) {
+        var out = [];
+        for (var i = 0; i < arrs.length; i++) {
+            for (var j = 0; j < arrs[i].length; j++) out.push(arrs[i][j]);
+        }
+        return out;
+    }
+
+    // =========================================
+    //  Favourites filtering
+    // =========================================
+
+    function _isStarred(item, kind) {
+        if (typeof StarredCache === 'undefined') return false;
+        if (kind === 'album') return StarredCache.isAlbumStarred(item.id);
+        if (kind === 'artist') return StarredCache.isArtistStarred(item.id);
+        return StarredCache.isSongStarred(item.id);
+    }
+
+    function _filterByFav(list, kind) {
+        if (!list) return [];
+        if (_favFilter === 'all') return list.slice();
+        var wantStarred = _favFilter === 'fav';
+        return list.filter(function(item) { return _isStarred(item, kind) === wantStarred; });
     }
 
     // =========================================
@@ -249,90 +450,102 @@ var LibraryScreen = (function() {
     // =========================================
 
     function activate(params) {
-        if (params && params.tab) {
-            _activeTab = params.tab;
-        }
-        // Reset genre mode on fresh activation (unless coming back with genre)
+        if (params && params.tab) _activeTab = params.tab;
         if (params && params.genre) {
             _genreMode = true;
             _currentGenre = params.genre;
+            _updateActionButtons();
             var api = App.getApi();
-            if (api) {
-                _loadGenreSongs(api, params.genre);
-            }
-            _registerSubNavZone();
+            if (api) _loadGenreSongs(api, params.genre);
+            _registerTabsZone();
+            _registerActionsZone();
             return;
         }
         _genreMode = false;
         _currentGenre = null;
+        _updateActionButtons();
         _loadTabContent();
-        _registerSubNavZone();
+        _registerTabsZone();
+        _registerActionsZone();
     }
 
     // =========================================
-    //  Sub-Nav Focus Zone (V3-3)
+    //  Focus zones — tabs + actions
     // =========================================
 
-    function _registerSubNavZone() {
-        FocusManager.registerZone('library-subnav', {
-            selector: '.library-subnav-item',
-            columns: 1,
+    function _registerTabsZone() {
+        FocusManager.registerZone('library-tabs', {
+            selector: '.library-tab',
+            columns: LIBRARY_TABS.length,
             defaultIndex: _tabIndex(_activeTab),
+            // Entering the strip (Up from content, Down from topnav, Left from
+            // the actions) always lands on the *active* tab — never the last one.
+            getEntryIndex: function() { return _tabIndex(_activeTab); },
             onFocus: function(idx) {
-                var newTab = LIBRARY_TABS[idx] ? LIBRARY_TABS[idx].key : _activeTab;
-                _setLibraryPillState('focused');
-                _updateLibraryPill(idx, true);
-                _markSubNavSelected(idx);
-                // Cross-fade only when the tab actually changes. A focus-only
-                // return from content (Left at leftmost column) keeps the
-                // current view intact — including genre-detail mode.
-                if (newTab !== _activeTab) {
-                    _genreMode = false;
-                    _currentGenre = null;
-                    _switchTabAnimated(newTab);
-                }
+                // Move the highlight pill to the focused tab as a preview only.
+                // Content is NOT switched here — it commits on Enter/Down, which
+                // keeps the right-side actions reachable without changing tab.
+                _setTabPillState('focused');
+                _updateTabPill(idx, true);
+                _markTabFocused(idx);
             },
-            onActivate: function(idx) {
-                // Enter — same as Right (drop into grid).
-                _enterLibraryContent();
-            },
+            onActivate: function(idx) { _commitFocusedTab(idx); },
             onKey: function(direction) {
-                var items = document.querySelectorAll('.library-subnav-item');
-                var idx = _tabIndex(_activeTab);
-
-                if (direction === 'up' && idx === 0) {
-                    // Return to top nav; pill transitions to selected (accent).
-                    _setLibraryPillState('selected');
+                if (direction === 'up') {
+                    _restTabPill();
                     FocusManager.setActiveZone('topnav', undefined, true);
                     return true;
                 }
-                if (direction === 'down' && idx === items.length - 1) {
-                    // Wrap to first item (Albums).
-                    FocusManager.setActiveZone('library-subnav', 0, true);
+                if (direction === 'down') {
+                    _commitFocusedTab(_focusedTabIndex());
                     return true;
                 }
-                if (direction === 'right') {
-                    _enterLibraryContent();
-                    return true;
+                if (direction === 'right' && _focusedTabIndex() === LIBRARY_TABS.length - 1) {
+                    if (FocusManager.hasZone('library-actions') && _actionsHasVisible()) {
+                        _restTabPill();
+                        FocusManager.setActiveZone('library-actions', 0, true);
+                        return true;
+                    }
                 }
-                if (direction === 'left') {
-                    // Nothing to the left of the sub-nav — eat the press.
-                    return true;
-                }
-                return false;
+                return false; // left/right within the strip → default move (triggers onFocus)
             },
             neighbors: {}
         });
     }
 
+    function _registerActionsZone() {
+        // Number of visible action buttons depends on the tab.
+        FocusManager.registerZone('library-actions', {
+            selector: '.library-action',
+            getElements: function() {
+                var all = document.querySelectorAll('#library-actions .library-action');
+                var vis = [];
+                for (var i = 0; i < all.length; i++) {
+                    if (all[i].style.display !== 'none') vis.push(all[i]);
+                }
+                return vis;
+            },
+            columns: 2,
+            onActivate: function(idx, element) { if (element) element.click(); },
+            onKey: function(direction) {
+                if (direction === 'up') {
+                    FocusManager.setActiveZone('topnav', undefined, true);
+                    return true;
+                }
+                if (direction === 'down') {
+                    _enterLibraryContent();
+                    return true;
+                }
+                return false;
+            },
+            neighbors: { left: 'library-tabs' }
+        });
+    }
+
     function _enterLibraryContent() {
-        // Pill becomes "selected" (accent) when focus leaves sub-nav into content.
-        _setLibraryPillState('selected');
-        var targetZone = FocusManager.hasZone('library-grid') ? 'library-grid'
-                        : (FocusManager.hasZone('content') ? 'content' : null);
-        if (targetZone) {
-            FocusManager.setActiveZone(targetZone, 0, true);
-        }
+        _restTabPill();
+        var targetZone = FocusManager.hasZone('library-grid') ? 'library-grid' : null;
+        if (targetZone) FocusManager.setActiveZone(targetZone, 0, true);
     }
 
     // =========================================
@@ -346,7 +559,6 @@ var LibraryScreen = (function() {
         container.style.opacity = '0';
         setTimeout(function() {
             _switchTabInstant(tabKey);
-            // Force reflow so the fade-in transition applies cleanly.
             void container.offsetHeight;
             container.style.transition = 'opacity 0.15s ease';
             container.style.opacity = '1';
@@ -354,34 +566,25 @@ var LibraryScreen = (function() {
     }
 
     function _switchTabInstant(tabKey) {
-        _currentSongs = null; // Clear song list when switching tabs
-        _albumLoader = null;  // Reset album pagination
-
-        // V3-6-fix2: tear down artists virtual grid / chunked-render state.
-        if (_artistsVirtualGrid) {
-            _artistsVirtualGrid.destroy();
-            _artistsVirtualGrid = null;
-        }
-        if (_artistsChunkRaf !== null) {
-            cancelAnimationFrame(_artistsChunkRaf);
-            _artistsChunkRaf = null;
-        }
-        _artistsAll = null;
-        _artistsRenderedCount = 0;
-
+        _teardownTransient();
         _activeTab = tabKey;
-        _markSubNavSelected(_tabIndex(tabKey));
-
-        // Unregister old grid zone (resets focus index)
+        _markTabSelected(_tabIndex(tabKey));
+        _updateActionButtons();
         FocusManager.unregisterZone('library-grid');
-
         _loadTabContent();
     }
 
-    // Back-compat wrapper for call sites (e.g. genre detail back button)
-    // that expect a synchronous tab switch.
-    function _switchTab(tabKey) {
-        _switchTabInstant(tabKey);
+    function _switchTab(tabKey) { _switchTabInstant(tabKey); }
+
+    function _teardownTransient() {
+        _currentSongs = null;
+        _albumLoader = null;
+        if (_artistsVirtualGrid) { _artistsVirtualGrid.destroy(); _artistsVirtualGrid = null; }
+        if (_songsVirtualGrid) { _songsVirtualGrid.destroy(); _songsVirtualGrid = null; }
+        if (_artistsChunkRaf !== null) { cancelAnimationFrame(_artistsChunkRaf); _artistsChunkRaf = null; }
+        _artistsAll = null;
+        _artistsRenderedCount = 0;
+        _artistsChunkedZoneRegistered = false;
     }
 
     // =========================================
@@ -391,27 +594,16 @@ var LibraryScreen = (function() {
     function _showLoading() {
         if (!_contentContainer) return;
         _contentContainer.textContent = '';
-
         var loading = el('div', { className: 'library-loading' });
-
         if (_activeTab === 'songs') {
-            // Song list skeletons
-            for (var i = 0; i < 10; i++) {
-                var row = el('div', { className: 'skeleton skeleton-song-row' });
-                loading.appendChild(row);
-            }
+            for (var i = 0; i < 10; i++) loading.appendChild(el('div', { className: 'skeleton skeleton-song-row' }));
         } else {
-            // Grid skeletons
-            var cols = _activeTab === 'genres' ? 4 : 6;
+            var cols = (_activeTab === 'genres' || _activeTab === 'playlists') ? 4 : 6;
             var grid = el('div', { className: 'library-grid' });
             grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
-            for (var j = 0; j < cols * 2; j++) {
-                var card = el('div', { className: 'skeleton skeleton-grid-card' });
-                grid.appendChild(card);
-            }
+            for (var j = 0; j < cols * 2; j++) grid.appendChild(el('div', { className: 'skeleton skeleton-grid-card' }));
             loading.appendChild(grid);
         }
-
         _contentContainer.appendChild(loading);
     }
 
@@ -421,75 +613,57 @@ var LibraryScreen = (function() {
 
     function _loadTabContent() {
         _showLoading();
-
         var api = App.getApi();
-        if (!api) {
-            _renderEmpty('Not connected to server');
-            return;
-        }
+        if (!api) { _renderEmpty('Not connected to server'); return; }
 
         switch (_activeTab) {
-            case 'albums':
-                _loadAlbums(api);
-                break;
-            case 'artists':
-                _loadArtists(api);
-                break;
-            case 'songs':
-                _loadSongs(api);
-                break;
-            case 'genres':
-                _loadGenres(api);
-                break;
+            case 'albums':    _loadAlbums(api); break;
+            case 'artists':   _loadArtists(api); break;
+            case 'songs':     _loadSongs(api); break;
+            case 'genres':    _loadGenres(api); break;
+            case 'playlists': _loadPlaylists(api); break;
         }
     }
 
-    // --- Albums Tab (Paginated) ---
+    // --- Albums Tab ---
 
     function _loadAlbums(api) {
         var expected = _activeTab;
-        // V3.8: capture the library selection at fetch time so subsequent
-        // pages stay scoped consistently across pagination.
+        _lastAlbums = [];
+
+        // Favourites-only short-circuits to the starred album list (no paging).
+        if (_favFilter === 'fav') {
+            var favAlbums = (typeof StarredCache !== 'undefined' && StarredCache.getAlbums)
+                ? StarredCache.getAlbums() : [];
+            _lastAlbums = favAlbums.slice();
+            if (!_contentContainer) return;
+            _contentContainer.textContent = '';
+            if (!favAlbums.length) { _renderEmpty('No favourite albums', true); return; }
+            var fgrid = el('div', { className: 'library-grid library-albums-grid', id: 'library-grid' });
+            _contentContainer.appendChild(fgrid);
+            _appendAlbumsToGrid(fgrid, favAlbums, api);
+            _registerGridZone(_getGridColumnCount(fgrid) || 6);
+            return;
+        }
+
         var libraryIds = AuthManager.getSelectedLibraries();
-        // V3.8-fix1: in the multi-library case the per-page fan-out can
-        // surface the same album id on more than one merged page, so wrap
-        // the fetch with cross-page dedupe and an internally-managed
-        // upstream cursor. Single- and all-libraries paths short-circuit
-        // to the v3.8 call shape (no extra promise hop).
         var multi = libraryIds && libraryIds.length >= 2;
         var seenIds = multi ? {} : null;
         var apiOffset = 0;
         var apiExhausted = false;
 
         function fetchPage(count, loaderOffset) {
-            if (!multi) {
-                return api.getAlbumList2(
-                    'alphabeticalByName', count, loaderOffset, libraryIds
-                );
-            }
-            // Refill from upstream until `count` fresh items have been
-            // collected or upstream is exhausted.
+            if (!multi) return api.getAlbumList2('alphabeticalByName', count, loaderOffset, libraryIds);
             var collected = [];
             function step() {
-                if (apiExhausted || collected.length >= count) {
-                    return Promise.resolve(collected.slice(0, count));
-                }
-                return api.getAlbumList2(
-                    'alphabeticalByName', count, apiOffset, libraryIds
-                ).then(function(albums) {
+                if (apiExhausted || collected.length >= count) return Promise.resolve(collected.slice(0, count));
+                return api.getAlbumList2('alphabeticalByName', count, apiOffset, libraryIds).then(function(albums) {
                     apiOffset += count;
-                    if (!albums.length) {
-                        apiExhausted = true;
-                        return collected;
-                    }
+                    if (!albums.length) { apiExhausted = true; return collected; }
                     if (albums.length < count) apiExhausted = true;
                     for (var i = 0; i < albums.length; i++) {
-                        var a = albums[i];
-                        var id = a && a.id;
-                        if (id === undefined || id === null) {
-                            collected.push(a);
-                            continue;
-                        }
+                        var a = albums[i], id = a && a.id;
+                        if (id === undefined || id === null) { collected.push(a); continue; }
                         if (seenIds[id]) continue;
                         seenIds[id] = true;
                         collected.push(a);
@@ -501,29 +675,18 @@ var LibraryScreen = (function() {
         }
 
         _albumLoader = new SonanceUtils.PaginatedLoader(fetchPage, 50);
-
         _albumLoader.loadNext(function(albums, hasMore) {
-            if (_activeTab !== expected) {
-                log('Library', 'Stale albums response ignored (active=' + _activeTab + ')');
-                return;
-            }
+            if (_activeTab !== expected) return;
             if (!_contentContainer) return;
+            albums = _filterByFav(albums, 'album'); // nofav at page level
             _contentContainer.textContent = '';
-
-            if (albums.length === 0) {
-                _renderEmpty('No albums found');
-                return;
-            }
-
+            if (albums.length === 0 && !hasMore) { _renderEmpty('No albums found'); return; }
             var grid = el('div', { className: 'library-grid library-albums-grid', id: 'library-grid' });
             _contentContainer.appendChild(grid);
-
+            _lastAlbums = _lastAlbums.concat(albums);
             _appendAlbumsToGrid(grid, albums, api);
             _updateLoadingIndicator(hasMore);
-
-            // Register grid zone with pagination support
-            var cols = _getGridColumnCount(grid);
-            _registerAlbumsGridZone(cols || 8, api);
+            _registerAlbumsGridZone(_getGridColumnCount(grid) || 8, api);
         });
     }
 
@@ -534,36 +697,25 @@ var LibraryScreen = (function() {
                 'data-album-id': album.id,
                 'data-album-title': album.name || album.title || ''
             });
-
             card.appendChild(SonanceComponents.renderAlbumArt(album, 0, api));
-
             var info = el('div', { className: 'album-grid-info' });
             info.appendChild(el('div', { className: 'album-grid-title' }, album.name || 'Unknown'));
-            // V3.7-fix11: prefer the API-side memoised _metaString
             var meta = album._metaString;
             if (typeof meta !== 'string' || !meta) {
                 meta = album.artist || 'Unknown Artist';
-                if (album.year) meta += ' \u00B7 ' + album.year;
+                if (album.year) meta += ' · ' + album.year;
             }
             info.appendChild(el('div', { className: 'album-grid-meta' }, meta));
             card.appendChild(info);
-
             grid.appendChild(card);
         });
     }
 
     function _updateLoadingIndicator(hasMore) {
         var existing = document.getElementById('library-loading-more');
-        if (existing && existing.parentNode) {
-            existing.parentNode.removeChild(existing);
-        }
-
+        if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
         if (hasMore && _contentContainer) {
-            var indicator = el('div', {
-                className: 'library-loading-more',
-                id: 'library-loading-more'
-            }, 'Loading...');
-            _contentContainer.appendChild(indicator);
+            _contentContainer.appendChild(el('div', { className: 'library-loading-more', id: 'library-loading-more' }, 'Loading...'));
         }
     }
 
@@ -572,59 +724,30 @@ var LibraryScreen = (function() {
             selector: '#library-grid .focusable',
             columns: cols,
             onActivate: function(idx, element) {
-                // V3-6-fix NAV-1: snapshot grid focus before drilling down
-                // so Back from the album/artist detail (or NP) restores it.
-                if (typeof App !== 'undefined' && App.saveCurrentFocus) {
-                    App.saveCurrentFocus();
-                }
+                if (App.saveCurrentFocus) App.saveCurrentFocus();
                 element.click();
             },
             onFocus: function(idx, element) {
-                // Scroll focused item into view
                 _scrollToFocused(_getScrollContainer(), element);
-
-                // Pagination: load more when near bottom
                 if (_albumLoader && _albumLoader.hasMore && !_albumLoader.loading) {
                     var elements = document.querySelectorAll('#library-grid .focusable');
                     if (elements.length - idx <= 5) {
                         _albumLoader.loadNext(function(albums, hasMore) {
-                            // Abort if user switched away from albums tab
                             if (_activeTab !== 'albums') return;
+                            albums = _filterByFav(albums, 'album');
                             var grid = document.getElementById('library-grid');
                             if (grid) {
+                                _lastAlbums = _lastAlbums.concat(albums);
                                 _appendAlbumsToGrid(grid, albums, api);
                             }
                             _updateLoadingIndicator(hasMore);
-                            // Re-register zone so FocusManager picks up new elements
-                            var newCols = grid ? _getGridColumnCount(grid) : cols;
-                            _registerAlbumsGridZone(newCols || cols, api);
+                            _registerAlbumsGridZone(grid ? (_getGridColumnCount(grid) || cols) : cols, api);
                         });
                     }
                 }
             },
-            neighbors: {
-                /* V3-6-fix NAV-2: Up goes to top nav, Left enters side sub-nav. */
-                left: 'library-subnav',
-                up: 'topnav',
-                down: 'nowplaying-bar'
-            }
+            neighbors: { up: 'library-tabs' }
         });
-
-        // Update NP bar to point up to grid
-        FocusManager.registerZone('nowplaying-bar', {
-            selector: '.np-bar-btn',
-            columns: 3,
-            onActivate: function(index) {
-                if (index === 0) Player.previous();
-                else if (index === 1) Player.togglePlayPause();
-                else if (index === 2) Player.next();
-            },
-            neighbors: {
-                up: 'library-grid',
-                left: 'topnav'
-            }
-        });
-
         App.hideColourHints();
     }
 
@@ -632,264 +755,211 @@ var LibraryScreen = (function() {
 
     function _loadArtists(api) {
         var expected = _activeTab;
+        if (_favFilter === 'fav') {
+            var favArtists = (typeof StarredCache !== 'undefined' && StarredCache.getArtists)
+                ? StarredCache.getArtists() : [];
+            _renderArtists(favArtists, api, true);
+            return;
+        }
         var libraryIds = AuthManager.getSelectedLibraries();
         api.getArtists(libraryIds).then(function(artists) {
-            if (_activeTab !== expected) {
-                log('Library', 'Stale artists response ignored (active=' + _activeTab + ')');
-                return;
-            }
-            _renderArtists(artists || [], api);
+            if (_activeTab !== expected) return;
+            _renderArtists(_filterByFav(artists || [], 'artist'), api, false);
         }).catch(function(err) {
             if (_activeTab !== expected) return;
-            log('Library', 'Error loading artists: ' + err.message);
             _renderEmpty('Unable to load artists');
         });
     }
 
-    // V3-6-fix2 PERF-1/2: build a single artist card. Used for both the
-    // chunked-render path (≤ ARTISTS_VIRTUAL_THRESHOLD) and the virtualised
-    // render path so the markup stays identical.
     function _renderArtistCard(artist, api) {
-        var card = el('div', {
-            className: 'artist-grid-card focusable',
-            'data-artist-id': artist.id
-        });
-
-        card.appendChild(SonanceComponents.renderArtistAvatar(artist, 100, api));
+        var card = el('div', { className: 'artist-grid-card focusable', 'data-artist-id': artist.id });
+        card.appendChild(SonanceComponents.renderArtistAvatar(artist, 140, api));
         card.appendChild(el('div', { className: 'artist-grid-name' }, artist.name || 'Unknown'));
-
         var albumCount = artist.albumCount || 0;
-        var countText = albumCount + ' album' + (albumCount !== 1 ? 's' : '');
-        card.appendChild(el('div', { className: 'artist-grid-count' }, countText));
-
+        card.appendChild(el('div', { className: 'artist-grid-count' }, albumCount + ' album' + (albumCount !== 1 ? 's' : '')));
         return card;
     }
 
-    function _renderArtists(artists, api) {
+    function _renderArtists(artists, api, isFav) {
         if (!_contentContainer) return;
         _contentContainer.textContent = '';
-
+        _lastArtists = artists.slice();
         if (artists.length === 0) {
-            _renderEmpty('No artists found');
+            _renderEmpty(isFav ? 'No favourite artists' : 'No artists found', isFav);
             return;
         }
-
         _artistsAll = artists;
         _artistsRenderedCount = 0;
-
-        if (artists.length > ARTISTS_VIRTUAL_THRESHOLD) {
-            _renderArtistsVirtual(artists, api);
-        } else {
-            _renderArtistsChunked(artists, api);
-        }
+        if (artists.length > ARTISTS_VIRTUAL_THRESHOLD) _renderArtistsVirtual(artists, api);
+        else _renderArtistsChunked(artists, api);
     }
 
-    // ≤80 artists: render in chunks of 50 via rAF so the first paint isn't
-    // blocked by a single big DOM insertion. The grid zone is re-registered
-    // after each chunk so newly-added cards become focusable.
     function _renderArtistsChunked(artists, api) {
         var grid = el('div', { className: 'library-grid library-artists-grid', id: 'library-grid' });
         _contentContainer.appendChild(grid);
-
-        // V3.7-fix9: register the focus zone once after the final chunk lands,
-        // not after every chunk — registerZone caches a querySelectorAll
-        // (prompt-3.7-fix4) and re-registering per chunk wastes the cache.
         _artistsChunkedZoneRegistered = false;
-
         function appendChunk() {
             _artistsChunkRaf = null;
-            if (_activeTab !== 'artists' || !_artistsAll) return;
-            if (!grid.parentNode) return;
-
+            if (_activeTab !== 'artists' || !_artistsAll || !grid.parentNode) return;
             var stop = Math.min(artists.length, _artistsRenderedCount + ARTISTS_CHUNK_SIZE);
-            for (var i = _artistsRenderedCount; i < stop; i++) {
-                grid.appendChild(_renderArtistCard(artists[i], api));
-            }
+            for (var i = _artistsRenderedCount; i < stop; i++) grid.appendChild(_renderArtistCard(artists[i], api));
             _artistsRenderedCount = stop;
-
-            // Lazy images for the new cards are picked up automatically by
-            // SonanceComponents.renderArtistAvatar → LazyLoader.observe.
-
             if (_artistsRenderedCount < artists.length) {
                 _artistsChunkRaf = requestAnimationFrame(appendChunk);
             } else if (!_artistsChunkedZoneRegistered) {
-                var artCols = _getGridColumnCount(grid) || 6;
-                _registerGridZone(artCols);
+                _registerGridZone(_getGridColumnCount(grid) || 6);
                 _artistsChunkedZoneRegistered = true;
             }
         }
-
         if (_artistsChunkRaf !== null) cancelAnimationFrame(_artistsChunkRaf);
         _artistsChunkRaf = requestAnimationFrame(appendChunk);
     }
 
-    // >80 artists: VirtualGrid renders only the visible rows + buffer. The
-    // focus zone is registered with a `virtual` config so FocusManager can
-    // navigate the full collection while the DOM stays small.
     function _renderArtistsVirtual(artists, api) {
-        // The mount hosts the spacer + an absolutely-positioned inner grid.
-        // It must NOT be display:grid itself (that would lay out the spacer).
-        // The inner grid carries the layout classes.
-        var mount = el('div', {
-            className: 'library-artists-virtual-mount',
-            id: 'library-grid'
-        });
+        var mount = el('div', { className: 'library-artists-virtual-mount', id: 'library-grid' });
         _contentContainer.appendChild(mount);
-
-        // The virtual grid renders an absolutely-positioned inner grid that
-        // gets the layout class. The outer #library-grid acts as the
-        // mount/spacer host so the existing focus-zone selector still works.
         var scrollContainer = _getScrollContainer();
-        if (!scrollContainer) {
-            // Fallback: render as straight chunked render.
-            _renderArtistsChunked(artists, api);
-            return;
-        }
-
+        if (!scrollContainer) { _renderArtistsChunked(artists, api); return; }
         _artistsVirtualGrid = new SonanceUtils.VirtualGrid({
             scrollContainer: scrollContainer,
             mountContainer: mount,
             items: artists,
-            renderItem: function(artist /*, index*/) {
-                return _renderArtistCard(artist, api);
-            },
+            renderItem: function(artist) { return _renderArtistCard(artist, api); },
             itemHeight: ARTIST_ITEM_HEIGHT,
             itemMinWidth: ARTIST_ITEM_MIN_WIDTH,
             gridClassName: 'library-grid library-artists-grid',
             bufferRows: 2,
-            onRangeRender: function(/* elements, startIndex, endIndex */) {
-                // Re-apply focus class if the focused card just re-mounted
-                // (FocusManager keeps the index but may have lost the node).
+            onRangeRender: function() {
                 if (FocusManager.getActiveZone && FocusManager.getActiveZone() === 'library-grid') {
                     var focused = FocusManager.getCurrentFocused();
                     if (!focused || !focused.parentNode) {
-                        // Defer to next tick — let VG finish its DOM insertion.
                         setTimeout(function() {
-                            if (FocusManager.getActiveZone && FocusManager.getActiveZone() === 'library-grid') {
-                                FocusManager.setActiveZone('library-grid', undefined, true);
-                            }
+                            if (FocusManager.getActiveZone() === 'library-grid') FocusManager.setActiveZone('library-grid', undefined, true);
                         }, 0);
                     }
                 }
             }
         });
         _artistsVirtualGrid.init();
-
-        // Register the artists virtual zone. FocusManager will use the
-        // virtual hooks below for count + node lookup; selector remains as
-        // a fallback for any stale calls.
-        _registerArtistsVirtualZone();
+        _registerVirtualZone(_artistsVirtualGrid, _getGridColumnCount);
     }
 
-    function _registerArtistsVirtualZone() {
-        if (!_artistsVirtualGrid) return;
-        var cols = _artistsVirtualGrid.getColumns();
-
+    // Generic virtual-zone registration shared by artists + songs.
+    function _registerVirtualZone(vgrid, _unused) {
+        var cols = vgrid.getColumns();
         FocusManager.registerZone('library-grid', {
             selector: '#library-grid .focusable',
             columns: cols,
             virtual: {
-                getCount: function() {
-                    return _artistsVirtualGrid ? _artistsVirtualGrid.getCount() : 0;
-                },
-                getItemAt: function(idx) {
-                    if (!_artistsVirtualGrid) return null;
-                    return _artistsVirtualGrid.ensureIndexVisible(idx);
-                }
+                getCount: function() { return vgrid ? vgrid.getCount() : 0; },
+                getItemAt: function(idx) { return vgrid ? vgrid.ensureIndexVisible(idx) : null; }
             },
             onActivate: function(idx, element) {
-                if (typeof App !== 'undefined' && App.saveCurrentFocus) {
-                    App.saveCurrentFocus();
-                }
+                if (App.saveCurrentFocus) App.saveCurrentFocus();
                 if (element) element.click();
             },
-            onFocus: function(/* idx, element */) {
-                // VirtualGrid handles scroll via ensureIndexVisible — nothing
-                // extra to do here. (No layout reads per keypress.)
-            },
-            neighbors: {
-                left: 'library-subnav',
-                up: 'topnav',
-                down: 'nowplaying-bar'
-            }
+            onFocus: function() {},
+            neighbors: { up: 'library-tabs' }
         });
-
-        FocusManager.registerZone('nowplaying-bar', {
-            selector: '.np-bar-btn',
-            columns: 3,
-            onActivate: function(index) {
-                if (index === 0) Player.previous();
-                else if (index === 1) Player.togglePlayPause();
-                else if (index === 2) Player.next();
-            },
-            neighbors: {
-                up: 'library-grid',
-                left: 'topnav'
-            }
-        });
-
         App.hideColourHints();
     }
 
-    // --- Songs Tab ---
+    // --- Songs Tab (virtualized) ---
 
     function _loadSongs(api) {
         var expected = _activeTab;
+        if (_favFilter === 'fav') {
+            var favSongs = (typeof StarredCache !== 'undefined' && StarredCache.getSongs)
+                ? StarredCache.getSongs() : [];
+            _renderSongs(favSongs, api, true);
+            return;
+        }
         var libraryIds = AuthManager.getSelectedLibraries();
-        api.getRandomSongs(50, libraryIds).then(function(songs) {
-            if (_activeTab !== expected) {
-                log('Library', 'Stale songs response ignored (active=' + _activeTab + ')');
-                return;
-            }
-            _renderSongs(songs || [], api);
+        api.getRandomSongs(100, libraryIds).then(function(songs) {
+            if (_activeTab !== expected) return;
+            _renderSongs(_filterByFav(songs || [], 'song'), api, false);
         }).catch(function(err) {
             if (_activeTab !== expected) return;
-            log('Library', 'Error loading songs: ' + err.message);
             _renderEmpty('Unable to load songs');
         });
     }
 
-    function _renderSongs(songs, api) {
+    function _renderSongRow(song, index) {
+        var row = el('div', { className: 'song-row focusable', 'data-song-id': song.id, 'data-song-index': String(index) });
+        row.appendChild(el('div', { className: 'song-row-number' }, String(index + 1)));
+        var info = el('div', { className: 'song-row-info' });
+        info.appendChild(el('div', { className: 'song-row-title' }, song.title || 'Unknown'));
+        var meta = song.artist || 'Unknown Artist';
+        if (song.album) meta += ' · ' + song.album;
+        info.appendChild(el('div', { className: 'song-row-meta' }, meta));
+        row.appendChild(info);
+        row.appendChild(el('div', { className: 'song-row-duration' }, (song._formattedDuration || formatDuration(song.duration))));
+        return row;
+    }
+
+    function _renderSongs(songs, api, isFav) {
         if (!_contentContainer) return;
         _contentContainer.textContent = '';
         _currentSongs = songs;
-
         if (songs.length === 0) {
             _currentSongs = null;
-            _renderEmpty('No songs found');
+            _renderEmpty(isFav ? 'No favourite songs' : 'No songs found', isFav);
             return;
         }
 
+        if (songs.length > SONGS_VIRTUAL_THRESHOLD) {
+            var mount = el('div', { className: 'library-songs-virtual-mount', id: 'library-grid' });
+            _contentContainer.appendChild(mount);
+            var scrollContainer = _getScrollContainer();
+            if (scrollContainer) {
+                _songsVirtualGrid = new SonanceUtils.VirtualGrid({
+                    scrollContainer: scrollContainer,
+                    mountContainer: mount,
+                    items: songs,
+                    renderItem: function(song, index) { return _renderSongRow(song, index); },
+                    itemHeight: SONG_ITEM_HEIGHT,
+                    itemMinWidth: 0, // force single column
+                    gridClassName: 'library-song-grid',
+                    bufferRows: 4,
+                    onRangeRender: function() {
+                        if (FocusManager.getActiveZone() === 'library-grid') {
+                            var f = FocusManager.getCurrentFocused();
+                            if (!f || !f.parentNode) {
+                                setTimeout(function() {
+                                    if (FocusManager.getActiveZone() === 'library-grid') FocusManager.setActiveZone('library-grid', undefined, true);
+                                }, 0);
+                            }
+                        }
+                    }
+                });
+                _songsVirtualGrid.init();
+                _registerSongsVirtualZone();
+                return;
+            }
+        }
+
+        // Small list: plain render
         var list = el('div', { className: 'library-song-list', id: 'library-grid' });
-
-        songs.forEach(function(song, index) {
-            var row = el('div', {
-                className: 'song-row focusable',
-                'data-song-id': song.id,
-                'data-song-index': String(index)
-            });
-
-            // Track number
-            row.appendChild(el('div', { className: 'song-row-number' }, String(index + 1)));
-
-            // Song info
-            var info = el('div', { className: 'song-row-info' });
-            info.appendChild(el('div', { className: 'song-row-title' }, song.title || 'Unknown'));
-
-            var meta = song.artist || 'Unknown Artist';
-            if (song.album) meta += ' \u00B7 ' + song.album;
-            info.appendChild(el('div', { className: 'song-row-meta' }, meta));
-            row.appendChild(info);
-
-            // Duration
-            row.appendChild(el('div', { className: 'song-row-duration' },
-                (song._formattedDuration || formatDuration(song.duration))));
-
-            list.appendChild(row);
-        });
-
+        songs.forEach(function(song, index) { list.appendChild(_renderSongRow(song, index)); });
         _contentContainer.appendChild(list);
         _registerGridZone(1);
+    }
+
+    function _registerSongsVirtualZone() {
+        var vgrid = _songsVirtualGrid;
+        var zoneConfig = {
+            selector: '#library-grid .focusable',
+            columns: 1,
+            virtual: {
+                getCount: function() { return vgrid ? vgrid.getCount() : 0; },
+                getItemAt: function(idx) { return vgrid ? vgrid.ensureIndexVisible(idx) : null; }
+            },
+            onActivate: function(idx, element) { if (element) element.click(); },
+            onFocus: function() {},
+            neighbors: { up: 'library-tabs' }
+        };
+        _attachSongColourButtons(zoneConfig);
+        FocusManager.registerZone('library-grid', zoneConfig);
     }
 
     // --- Genres Tab ---
@@ -897,20 +967,14 @@ var LibraryScreen = (function() {
     function _loadGenres(api) {
         var expected = _activeTab;
         api.getGenres().then(function(genres) {
-            if (_activeTab !== expected) {
-                log('Library', 'Stale genres response ignored (active=' + _activeTab + ')');
-                return;
-            }
-            _renderGenres(genres || []);
-        }).catch(function(err) {
             if (_activeTab !== expected) return;
-            log('Library', 'Error loading genres: ' + err.message);
+            _renderGenres(genres || []);
+        }).catch(function() {
+            if (_activeTab !== expected) return;
             _renderEmpty('Unable to load genres');
         });
     }
 
-    // V3-5: gradient card palette (Apple Music style). Each genre gets a
-    // unique gradient from this curated list; cycled by index.
     var GENRE_GRADIENTS = [
         'linear-gradient(135deg, #7c3aed, #4f46e5)',
         'linear-gradient(135deg, #0891b2, #0e7490)',
@@ -929,36 +993,50 @@ var LibraryScreen = (function() {
     function _renderGenres(genres) {
         if (!_contentContainer) return;
         _contentContainer.textContent = '';
-
-        if (genres.length === 0) {
-            _renderEmpty('No genres found');
-            return;
-        }
-
+        if (genres.length === 0) { _renderEmpty('No genres found'); return; }
         var grid = el('div', { className: 'library-grid library-genres-grid', id: 'library-grid' });
-
         genres.forEach(function(genre, index) {
             var name = genre.value || genre.name || 'Unknown';
-            var gradient = GENRE_GRADIENTS[index % GENRE_GRADIENTS.length];
-
-            var card = el('div', {
-                className: 'genre-card focusable',
-                'data-genre': name
-            });
-            card.style.background = gradient;
-
+            var card = el('div', { className: 'genre-card focusable', 'data-genre': name });
+            card.style.background = GENRE_GRADIENTS[index % GENRE_GRADIENTS.length];
             card.appendChild(el('div', { className: 'genre-card-name' }, name));
-
             var countParts = [];
             if (genre.albumCount) countParts.push(genre.albumCount + ' albums');
             if (genre.songCount) countParts.push(genre.songCount + ' songs');
-            if (countParts.length > 0) {
-                card.appendChild(el('div', { className: 'genre-card-count' }, countParts.join(' \u00B7 ')));
-            }
-
+            if (countParts.length) card.appendChild(el('div', { className: 'genre-card-count' }, countParts.join(' · ')));
             grid.appendChild(card);
         });
+        _contentContainer.appendChild(grid);
+        _registerGridZone(4);
+    }
 
+    // --- Playlists Tab ---
+
+    function _loadPlaylists(api) {
+        var expected = _activeTab;
+        api.getPlaylists().then(function(playlists) {
+            if (_activeTab !== expected) return;
+            _renderPlaylistsGrid(playlists || []);
+        }).catch(function() {
+            if (_activeTab !== expected) return;
+            _renderEmpty('Unable to load playlists');
+        });
+    }
+
+    function _renderPlaylistsGrid(playlists) {
+        if (!_contentContainer) return;
+        _contentContainer.textContent = '';
+        _lastPlaylists = playlists.slice();
+        if (playlists.length === 0) { _renderEmpty('No playlists yet'); return; }
+        var grid = el('div', { className: 'library-grid library-playlists-grid', id: 'library-grid' });
+        playlists.forEach(function(pl) {
+            var colors = SonanceComponents.hashColor(pl.name || '');
+            var card = el('div', { className: 'playlist-card library-playlist-card focusable', 'data-playlist-id': pl.id });
+            card.style.background = 'linear-gradient(135deg, ' + colors.base + ' 0%, var(--bg-card) 100%)';
+            card.appendChild(el('div', { className: 'playlist-card-name' }, pl.name || 'Untitled'));
+            card.appendChild(el('div', { className: 'playlist-card-count' }, (pl.songCount || 0) + ' tracks'));
+            grid.appendChild(card);
+        });
         _contentContainer.appendChild(grid);
         _registerGridZone(4);
     }
@@ -969,172 +1047,94 @@ var LibraryScreen = (function() {
 
     function _loadGenreSongs(api, genreName) {
         if (!_contentContainer) return;
-
-        // Unregister existing zones
         FocusManager.unregisterZone('library-grid');
-        FocusManager.unregisterZone('content');
-
         _contentContainer.textContent = '';
-
-        // Heading (non-focusable) \u2014 hardware Back returns to the genre grid
+        _updateActionButtons();
         var header = el('div', { className: 'genre-songs-header' });
         header.appendChild(el('div', { className: 'genre-songs-title' }, genreName));
         _contentContainer.appendChild(header);
-
-        // Loading state
         var loadingWrap = el('div', { id: 'library-grid' });
-        for (var i = 0; i < 10; i++) {
-            loadingWrap.appendChild(el('div', { className: 'skeleton skeleton-song-row' }));
-        }
+        for (var i = 0; i < 10; i++) loadingWrap.appendChild(el('div', { className: 'skeleton skeleton-song-row' }));
         _contentContainer.appendChild(loadingWrap);
-
         var libraryIds = AuthManager.getSelectedLibraries();
         api.getSongsByGenre(genreName, 50, 0, libraryIds).then(function(songs) {
             if (!_genreMode || _currentGenre !== genreName) return;
             _renderGenreSongs(songs || [], api, genreName);
-        }).catch(function(err) {
+        }).catch(function() {
             if (!_genreMode || _currentGenre !== genreName) return;
-            log('Library', 'Error loading genre songs: ' + err.message);
             var gridEl = document.getElementById('library-grid');
-            if (gridEl) {
-                gridEl.textContent = '';
-                gridEl.appendChild(el('div', { className: 'home-empty' },
-                    'Unable to load songs for ' + genreName));
-            }
+            if (gridEl) { gridEl.textContent = ''; gridEl.appendChild(el('div', { className: 'home-empty' }, 'Unable to load songs for ' + genreName)); }
         });
     }
 
-    // Back handling for in-screen genre detail mode \u2014 called by App.goBack
-    // before its default flow. Returns true when handled.
     function handleBack() {
         if (!_genreMode) return false;
         _genreMode = false;
         _currentGenre = null;
         _activeTab = 'genres';
+        _updateActionButtons();
         if (App.zoomContent) {
-            App.zoomContent(_contentContainer, function() {
-                _switchTab('genres');
-            }, 'out');
+            App.zoomContent(_contentContainer, function() { _switchTab('genres'); }, 'out');
         } else {
             _switchTab('genres');
         }
-        // V3-6-fix NAV-1: prefer restoring the genre tile the user came
-        // from. The genre grid re-renders asynchronously, so tryRestoreFocus
-        // schedules a poll. Fall back to the sub-nav only when no snapshot
-        // is available (e.g. came from a deep link).
-        var restored = (typeof App !== 'undefined' && App.tryRestoreFocus)
-            ? App.tryRestoreFocus()
-            : false;
-        if (!restored) {
-            FocusManager.setActiveZone('library-subnav', _tabIndex('genres'), true);
-        }
+        var restored = (App.tryRestoreFocus) ? App.tryRestoreFocus() : false;
+        if (!restored) FocusManager.setActiveZone('library-tabs', _tabIndex('genres'), true);
         return true;
     }
 
     function _renderGenreSongs(songs, api, genreName) {
         var gridEl = document.getElementById('library-grid');
-        if (gridEl) gridEl.parentNode.removeChild(gridEl);
-
+        if (gridEl && gridEl.parentNode) gridEl.parentNode.removeChild(gridEl);
         if (!_contentContainer) return;
         _currentSongs = songs;
-
         if (songs.length === 0) {
-            _contentContainer.appendChild(el('div', { className: 'home-empty library-empty' },
-                'No songs found in ' + genreName));
+            _contentContainer.appendChild(el('div', { className: 'home-empty library-empty' }, 'No songs found in ' + genreName));
             return;
         }
-
         var list = el('div', { className: 'library-song-list', id: 'library-grid' });
-
         songs.forEach(function(song, index) {
-            var rowAttrs = {
-                className: 'song-row focusable',
-                'data-song-id': song.id,
-                'data-song-index': String(index)
-            };
-            if (song.albumId) {
-                rowAttrs['data-album-id'] = song.albumId;
-                rowAttrs['data-album-title'] = song.album || '';
-            }
+            var rowAttrs = { className: 'song-row focusable', 'data-song-id': song.id, 'data-song-index': String(index) };
+            if (song.albumId) { rowAttrs['data-album-id'] = song.albumId; rowAttrs['data-album-title'] = song.album || ''; }
             var row = el('div', rowAttrs);
-
             row.appendChild(el('div', { className: 'song-row-number' }, String(index + 1)));
-
             var info = el('div', { className: 'song-row-info' });
-            info.appendChild(el('div', { className: 'song-row-title' },
-                song.title || 'Unknown'));
+            info.appendChild(el('div', { className: 'song-row-title' }, song.title || 'Unknown'));
             var meta = song.artist || 'Unknown Artist';
-            if (song.album) meta += ' \u00B7 ' + song.album;
+            if (song.album) meta += ' · ' + song.album;
             info.appendChild(el('div', { className: 'song-row-meta' }, meta));
             row.appendChild(info);
-
-            row.appendChild(el('div', { className: 'song-row-duration' },
-                (song._formattedDuration || formatDuration(song.duration))));
-
+            row.appendChild(el('div', { className: 'song-row-duration' }, (song._formattedDuration || formatDuration(song.duration))));
             list.appendChild(row);
         });
-
         _contentContainer.appendChild(list);
-
         _registerGridZone(1);
-        // V3-6-fix3 NAV-2: focus the first song row when a genre opens. The
-        // active zone is usually 'library-subnav' coming in, so pass force=true.
         FocusManager.setActiveZone('library-grid', 0, true);
     }
 
     // =========================================
-    //  Grid Column Count Helper (P8.1)
+    //  Grid Column Count Helper
     // =========================================
 
     function _getGridColumnCount(gridEl) {
         if (!gridEl || !gridEl.children || gridEl.children.length === 0) return 0;
         var style = window.getComputedStyle(gridEl);
         var cols = style.getPropertyValue('grid-template-columns');
-        if (cols) {
-            return cols.split(/\s+/).length;
-        }
+        if (cols) return cols.split(/\s+/).length;
         return 0;
     }
 
     // =========================================
-    //  Focus Zone Registration (non-albums)
+    //  Focus Zone Registration (non-paginated grids + song lists)
     // =========================================
 
-    function _registerGridZone(cols) {
-        var zoneConfig = {
-            selector: '#library-grid .focusable',
-            columns: cols,
-            onActivate: function(idx, element) {
-                // V3-6-fix NAV-1: snapshot grid focus before drilling down
-                // so Back from the detail (or NP) restores it.
-                if (typeof App !== 'undefined' && App.saveCurrentFocus) {
-                    App.saveCurrentFocus();
-                }
-                element.click();
-            },
-            onFocus: function(idx, element) {
-                _scrollToFocused(_getScrollContainer(), element);
-            },
-            neighbors: {
-                /* V3-6-fix NAV-2: Up goes to top nav, Left enters side sub-nav. */
-                left: 'library-subnav',
-                up: 'topnav',
-                down: 'nowplaying-bar'
-            }
-        };
-
-        // Add colour button support for song lists
-        if (cols === 1 && _currentSongs && _currentSongs.length > 0) {
+    function _attachSongColourButtons(zoneConfig) {
+        if (_currentSongs && _currentSongs.length > 0) {
             zoneConfig.onColourButton = function(colour, idx) {
                 var track = _currentSongs[idx];
                 if (!track) return;
-                if (colour === 'yellow') {
-                    Player.addToQueue(track);
-                    App.showToast('Added to queue');
-                } else if (colour === 'blue') {
-                    Player.addToQueueNext(track);
-                    App.showToast('Playing next');
-                }
+                if (colour === 'yellow') { Player.addToQueue(track); App.showToast('Added to queue'); }
+                else if (colour === 'blue') { Player.addToQueueNext(track); App.showToast('Playing next'); }
             };
             App.showColourHints([
                 { colour: 'yellow', label: 'Add to queue' },
@@ -1143,49 +1143,37 @@ var LibraryScreen = (function() {
         } else {
             App.hideColourHints();
         }
+    }
 
-        FocusManager.registerZone('library-grid', zoneConfig);
-
-        // Update NP bar to point up to grid
-        FocusManager.registerZone('nowplaying-bar', {
-            selector: '.np-bar-btn',
-            columns: 3,
-            onActivate: function(index) {
-                if (index === 0) Player.previous();
-                else if (index === 1) Player.togglePlayPause();
-                else if (index === 2) Player.next();
+    function _registerGridZone(cols) {
+        var zoneConfig = {
+            selector: '#library-grid .focusable',
+            columns: cols,
+            onActivate: function(idx, element) {
+                if (App.saveCurrentFocus) App.saveCurrentFocus();
+                element.click();
             },
-            neighbors: {
-                up: 'library-grid',
-                left: 'topnav'
-            }
-        });
+            onFocus: function(idx, element) { _scrollToFocused(_getScrollContainer(), element); },
+            neighbors: { up: 'library-tabs' }
+        };
+        if (cols === 1) _attachSongColourButtons(zoneConfig);
+        else App.hideColourHints();
+        FocusManager.registerZone('library-grid', zoneConfig);
     }
 
     // =========================================
-    //  Empty State
+    //  Empty State (centered icon + message)
     // =========================================
 
-    function _renderEmpty(message) {
+    function _renderEmpty(message, isFavEmpty) {
         if (!_contentContainer) return;
         _contentContainer.textContent = '';
-        var empty = el('div', { className: 'home-empty library-empty' });
-        empty.appendChild(el('div', null, message));
+        var empty = el('div', { className: 'library-empty-state' });
+        var icon = createStarSvg(!!isFavEmpty);
+        icon.classList.add('library-empty-icon');
+        empty.appendChild(icon);
+        empty.appendChild(el('div', { className: 'library-empty-msg' }, message));
         _contentContainer.appendChild(empty);
-
-        FocusManager.registerZone('nowplaying-bar', {
-            selector: '.np-bar-btn',
-            columns: 3,
-            onActivate: function(index) {
-                if (index === 0) Player.previous();
-                else if (index === 1) Player.togglePlayPause();
-                else if (index === 2) Player.next();
-            },
-            neighbors: {
-                up: 'library-subnav',
-                left: 'topnav'
-            }
-        });
     }
 
     // =========================================
@@ -1199,24 +1187,10 @@ var LibraryScreen = (function() {
         _currentGenre = null;
         _currentSongs = null;
         _albumLoader = null;
-
-        if (_artistsVirtualGrid) {
-            _artistsVirtualGrid.destroy();
-            _artistsVirtualGrid = null;
-        }
-        if (_artistsChunkRaf !== null) {
-            cancelAnimationFrame(_artistsChunkRaf);
-            _artistsChunkRaf = null;
-        }
-        _artistsAll = null;
-        _artistsRenderedCount = 0;
-        // V3.7-fix9: reset so a re-entry re-registers cleanly.
-        _artistsChunkedZoneRegistered = false;
+        _teardownTransient();
     }
 
-    function getActiveTab() {
-        return _activeTab;
-    }
+    function getActiveTab() { return _activeTab; }
 
     return {
         render: render,
