@@ -13,6 +13,12 @@ var StarredCache = (function() {
     var _songs = {};
     var _albums = {};
     var _artists = {};
+    // REDESIGN: also retain the full starred objects (in server order) so the
+    // Home quick-access backfill and the Library favourites filter can render
+    // them without re-fetching.
+    var _songList = [];
+    var _albumList = [];
+    var _artistList = [];
     var _listeners = [];
 
     function _emitChange(kind, id, starred) {
@@ -47,14 +53,17 @@ var StarredCache = (function() {
             _songs = {};
             _albums = {};
             _artists = {};
+            _songList = [];
+            _albumList = [];
+            _artistList = [];
             if (data.song) {
-                data.song.forEach(function(s) { if (s && s.id) _songs[s.id] = true; });
+                data.song.forEach(function(s) { if (s && s.id) { _songs[s.id] = true; _songList.push(s); } });
             }
             if (data.album) {
-                data.album.forEach(function(a) { if (a && a.id) _albums[a.id] = true; });
+                data.album.forEach(function(a) { if (a && a.id) { _albums[a.id] = true; _albumList.push(a); } });
             }
             if (data.artist) {
-                data.artist.forEach(function(a) { if (a && a.id) _artists[a.id] = true; });
+                data.artist.forEach(function(a) { if (a && a.id) { _artists[a.id] = true; _artistList.push(a); } });
             }
             log('Starred', 'Loaded: ' +
                 Object.keys(_songs).length + ' songs, ' +
@@ -97,7 +106,16 @@ var StarredCache = (function() {
         _songs = {};
         _albums = {};
         _artists = {};
+        _songList = [];
+        _albumList = [];
+        _artistList = [];
     }
+
+    // REDESIGN getters — return the cached starred objects. Filter against the
+    // id maps so optimistic un-stars are reflected without a reload.
+    function getAlbums()  { return _albumList.filter(function(a) { return !!_albums[a.id]; }); }
+    function getSongs()   { return _songList.filter(function(s) { return !!_songs[s.id]; }); }
+    function getArtists() { return _artistList.filter(function(a) { return !!_artists[a.id]; }); }
 
     return {
         load: load,
@@ -107,6 +125,9 @@ var StarredCache = (function() {
         toggleSong: toggleSong,
         toggleAlbum: toggleAlbum,
         toggleArtist: toggleArtist,
+        getAlbums: getAlbums,
+        getSongs: getSongs,
+        getArtists: getArtists,
         on: on,
         off: off,
         clear: clear

@@ -1,6 +1,6 @@
 /* ============================================
-   Sonance — Home Screen
-   Hero banner, recently played, playlists
+   Sonance — Home Screen (REDESIGN)
+   Full-bleed cinematic hero, 2×3 quick-access grid, horizontal scroll rows.
    ============================================ */
 
 var HomeScreen = (function() {
@@ -16,9 +16,10 @@ var HomeScreen = (function() {
     var _newestAlbums = [];
     var _recentAlbums = [];
     var _playlists = [];
+    var _quickAccess = [];
 
     // =========================================
-    //  Scroll Helper (Chromium 63 safe)
+    //  Scroll Helper (Chromium 63 safe — anchored scrolling)
     // =========================================
 
     function _scrollToFocused(element) {
@@ -29,9 +30,9 @@ var HomeScreen = (function() {
         var viewTop = container.scrollTop;
         var viewBottom = viewTop + container.clientHeight;
         if (elBottom > viewBottom) {
-            container.scrollTop = elBottom - container.clientHeight + 20;
+            container.scrollTop = elBottom - container.clientHeight + 32;
         } else if (elTop < viewTop) {
-            container.scrollTop = elTop - 20;
+            container.scrollTop = elTop - 32;
         }
     }
 
@@ -44,50 +45,46 @@ var HomeScreen = (function() {
 
         var wrapper = el('div', { className: 'home-screen' });
 
-        // Hero banner — loading skeleton
+        // Full-bleed hero — loading skeleton
         var hero = el('div', { className: 'home-hero', id: 'home-hero' });
-        var heroSkeleton = el('div', { className: 'skeleton home-hero-skeleton' });
-        hero.appendChild(heroSkeleton);
+        hero.appendChild(el('div', { className: 'skeleton home-hero-skeleton' }));
         wrapper.appendChild(hero);
 
-        // Recently Added section (P4.9)
+        // Quick-access 2×3 grid (replaces "Recently Played")
+        var qaSection = el('div', { className: 'home-section home-qa-section' });
+        var qaGrid = el('div', { className: 'home-qa-grid', id: 'home-qa-grid' });
+        qaGrid.appendChild(SonanceComponents.renderSkeletonCards(6, 0, 88, 'skeleton-qa'));
+        qaSection.appendChild(qaGrid);
+        wrapper.appendChild(qaSection);
+
+        // Recently Added row
         var newestSection = el('div', { className: 'home-section' });
         newestSection.appendChild(el('div', { className: 'home-section-heading' }, 'Recently Added'));
         var newestRow = el('div', { className: 'home-row', id: 'home-newest-row' });
-        newestRow.appendChild(SonanceComponents.renderSkeletonCards(6, 162, 220, 'skeleton-card'));
+        newestRow.appendChild(SonanceComponents.renderSkeletonCards(6, 210, 280, 'skeleton-card'));
         newestSection.appendChild(newestRow);
         wrapper.appendChild(newestSection);
 
-        // Recently Played section
-        var recentSection = el('div', { className: 'home-section' });
-        recentSection.appendChild(el('div', { className: 'home-section-heading', id: 'home-recent-heading' }, 'Recently Played'));
-        var recentRow = el('div', { className: 'home-row', id: 'home-recent-row' });
-        recentRow.appendChild(SonanceComponents.renderSkeletonCards(6, 162, 220, 'skeleton-card'));
-        recentSection.appendChild(recentRow);
-        wrapper.appendChild(recentSection);
-
-        // Your Playlists section
+        // Playlists row
         var playlistSection = el('div', { className: 'home-section' });
         playlistSection.appendChild(el('div', { className: 'home-section-heading' }, 'Your Playlists'));
         var playlistRow = el('div', { className: 'home-row', id: 'home-playlists-row' });
-        playlistRow.appendChild(SonanceComponents.renderSkeletonCards(4, 230, 120, 'skeleton-card'));
+        playlistRow.appendChild(SonanceComponents.renderSkeletonCards(5, 210, 210, 'skeleton-card'));
         playlistSection.appendChild(playlistRow);
         wrapper.appendChild(playlistSection);
 
         container.appendChild(wrapper);
 
-        // V3.7-fix10: one delegated click listener per row container; cards
-        // carry data-album-id / data-playlist-id so we can navigate without
-        // a per-card listener.
+        // Delegated click listeners (cards carry data-album-id / data-playlist-id).
+        qaGrid.addEventListener('click', _onAlbumRowClick);
         newestRow.addEventListener('click', _onAlbumRowClick);
-        recentRow.addEventListener('click', _onAlbumRowClick);
         playlistRow.addEventListener('click', _onPlaylistRowClick);
 
         log('Home', 'Home screen rendered (loading state)');
     }
 
     function _onAlbumRowClick(ev) {
-        var card = ev.target.closest('.album-card');
+        var card = ev.target.closest('.album-card, .qa-tile');
         if (!card) return;
         var id = card.getAttribute('data-album-id');
         if (!id) return;
@@ -114,12 +111,10 @@ var HomeScreen = (function() {
             return;
         }
 
-        // V3.8: scope the album rows to the user's library selection.
         var libraryIds = AuthManager.getSelectedLibraries();
 
-        // Fetch all data in parallel
-        var newestPromise = api.getAlbumList2('newest', 6, 0, libraryIds);
-        var recentPromise = api.getAlbumList2('recent', 6, 0, libraryIds);
+        var newestPromise = api.getAlbumList2('newest', 12, 0, libraryIds);
+        var recentPromise = api.getAlbumList2('recent', 12, 0, libraryIds);
         var playlistPromise = api.getPlaylists();
 
         Promise.all([newestPromise, recentPromise, playlistPromise]).then(function(results) {
@@ -127,16 +122,12 @@ var HomeScreen = (function() {
             _recentAlbums = results[1] || [];
             _playlists = results[2] || [];
 
-            // Use first newest album as hero
-            if (_newestAlbums.length > 0) {
-                _heroAlbum = _newestAlbums[0];
-            } else if (_recentAlbums.length > 0) {
-                _heroAlbum = _recentAlbums[0];
-            }
+            _heroAlbum = _newestAlbums[0] || _recentAlbums[0] || null;
+            _quickAccess = _buildQuickAccess();
 
             _renderHero(api);
+            _renderQuickAccess(api);
             _renderNewestAlbums(api);
-            _renderRecentAlbums(api);
             _renderPlaylists(api);
             _registerFocusZones();
 
@@ -147,8 +138,27 @@ var HomeScreen = (function() {
         });
     }
 
+    // Deduplicated recents, backfilled with starred albums (then newest) so the
+    // quick-access grid is always 6 distinct items where possible.
+    function _buildQuickAccess() {
+        var seen = {};
+        var out = [];
+        function add(album) {
+            if (!album || !album.id || seen[album.id]) return;
+            if (out.length >= 6) return;
+            seen[album.id] = true;
+            out.push(album);
+        }
+        _recentAlbums.forEach(add);
+        if (out.length < 6 && typeof StarredCache !== 'undefined' && StarredCache.getAlbums) {
+            StarredCache.getAlbums().forEach(add);
+        }
+        if (out.length < 6) _newestAlbums.forEach(add);
+        return out;
+    }
+
     // =========================================
-    //  Hero Banner
+    //  Full-bleed Hero
     // =========================================
 
     function _renderHero(api) {
@@ -157,7 +167,6 @@ var HomeScreen = (function() {
         heroContainer.textContent = '';
 
         if (!_heroAlbum) {
-            // Welcome state — no recent albums
             var welcome = el('div', { className: 'home-hero-content' });
             welcome.appendChild(el('div', { className: 'home-hero-label' }, 'WELCOME TO'));
             welcome.appendChild(el('div', { className: 'home-hero-title' }, 'Sonance'));
@@ -167,62 +176,100 @@ var HomeScreen = (function() {
         }
 
         var album = _heroAlbum;
+        var coverId = album.coverArt || album.id;
 
-        // Album art (V3-5: 200px) with accent glow behind it
-        var artWrap = el('div', { className: 'home-hero-art' });
-        artWrap.appendChild(el('div', { className: 'hero-glow' }));
-        artWrap.appendChild(SonanceComponents.renderAlbumArt(album, 200, api));
-        heroContainer.appendChild(artWrap);
+        // Background image bleeds across the top; gradient fades into content.
+        var bg = el('div', { className: 'home-hero-bg' });
+        if (coverId && typeof ImageCache !== 'undefined') {
+            bg.style.backgroundImage = 'url("' + ImageCache.getUrl(coverId, 600) + '")';
+        }
+        heroContainer.appendChild(bg);
+        heroContainer.appendChild(el('div', { className: 'home-hero-fade' }));
 
-        // Info panel
-        var info = el('div', { className: 'home-hero-info' });
-        var heroLabel = 'LATEST ADDITION';
-        info.appendChild(el('div', { className: 'home-hero-label' }, heroLabel));
+        var info = el('div', { className: 'home-hero-content' });
+        info.appendChild(el('div', { className: 'home-hero-label' }, 'LATEST ADDITION'));
         info.appendChild(el('div', { className: 'home-hero-title' }, album.name || album.title || 'Unknown Album'));
 
-        var meta = album._metaString;
-        if (typeof meta !== 'string' || !meta) {
-            meta = album.artist || 'Unknown Artist';
-            if (album.year) meta += ' \u00B7 ' + album.year;
-        }
+        var meta = album.artist || 'Unknown Artist';
+        if (album.year) meta += ' · ' + album.year;
         info.appendChild(el('div', { className: 'home-hero-subtitle' }, meta));
 
-        // Play + Shuffle buttons
         var buttons = el('div', { className: 'home-hero-buttons' });
 
         var playBtn = el('button', { className: 'hero-play-btn focusable' });
         var playIcon = createSvg(SVG_PATHS.play);
-        playIcon.style.width = '16px';
-        playIcon.style.height = '16px';
-        playIcon.style.fill = 'white';
+        playIcon.style.width = '22px';
+        playIcon.style.height = '22px';
+        playIcon.style.fill = 'currentColor';
         playIcon.style.flexShrink = '0';
         playBtn.appendChild(playIcon);
         playBtn.appendChild(document.createTextNode(' Play'));
-        playBtn.addEventListener('click', function() {
-            log('Home', 'Play hero album: ' + album.id);
-            App.navigateTo('album', { id: album.id, title: album.name || album.title }, 'zoom-in');
-        });
+        playBtn.addEventListener('click', function() { _playHero(api, false); });
         buttons.appendChild(playBtn);
 
         var shuffleBtn = el('button', { className: 'hero-shuffle-btn focusable' });
         var shuffleIcon = createSvg(SVG_PATHS.shuffle);
-        shuffleIcon.style.width = '16px';
-        shuffleIcon.style.height = '16px';
+        shuffleIcon.style.width = '22px';
+        shuffleIcon.style.height = '22px';
         shuffleIcon.style.fill = 'currentColor';
         shuffleIcon.style.flexShrink = '0';
         shuffleBtn.appendChild(shuffleIcon);
         shuffleBtn.appendChild(document.createTextNode(' Shuffle'));
-        shuffleBtn.addEventListener('click', function() {
-            log('Home', 'Shuffle hero album: ' + album.id);
-        });
+        shuffleBtn.addEventListener('click', function() { _playHero(api, true); });
         buttons.appendChild(shuffleBtn);
 
         info.appendChild(buttons);
         heroContainer.appendChild(info);
     }
 
+    function _playHero(api, shuffle) {
+        if (!_heroAlbum) return;
+        api.getAlbum(_heroAlbum.id).then(function(full) {
+            var songs = (full && full.song) || [];
+            if (!songs.length) {
+                App.navigateTo('album', { id: _heroAlbum.id, title: _heroAlbum.name || _heroAlbum.title }, 'zoom-in');
+                return;
+            }
+            if (shuffle) Player.shuffleQueue(songs);
+            else Player.setQueue(songs, 0);
+        }).catch(function(err) {
+            log('Home', 'Hero play failed: ' + (err && err.message));
+        });
+    }
+
     // =========================================
-    //  Recently Added Row (P4.9)
+    //  Quick-access 2×3 grid
+    // =========================================
+
+    function _renderQuickAccess(api) {
+        var grid = document.getElementById('home-qa-grid');
+        if (!grid) return;
+        grid.textContent = '';
+
+        if (!_quickAccess.length) {
+            grid.appendChild(el('div', { className: 'home-empty' }, 'Nothing here yet'));
+            return;
+        }
+
+        _quickAccess.forEach(function(album) {
+            var tile = el('div', {
+                className: 'qa-tile focusable',
+                'data-album-id': album.id,
+                'data-album-title': album.name || album.title || ''
+            });
+            var art = el('div', { className: 'qa-tile-art' });
+            art.appendChild(SonanceComponents.renderAlbumArt(album, 72, api));
+            tile.appendChild(art);
+            var info = el('div', { className: 'qa-tile-info' });
+            info.appendChild(el('div', { className: 'qa-tile-title' }, album.name || album.title || 'Unknown'));
+            info.appendChild(el('div', { className: 'qa-tile-artist' }, album.artist || 'Unknown Artist'));
+            tile.appendChild(info);
+            grid.appendChild(tile);
+        });
+    }
+
+    // =========================================
+    //  Recently Added Row
     // =========================================
 
     function _renderNewestAlbums(api) {
@@ -241,40 +288,9 @@ var HomeScreen = (function() {
                 'data-album-id': album.id,
                 'data-album-title': album.name || album.title || ''
             });
-
-            card.appendChild(SonanceComponents.renderAlbumArt(album, 162, api));
+            card.appendChild(SonanceComponents.renderAlbumArt(album, 210, api));
             card.appendChild(el('div', { className: 'album-card-title' }, album.name || album.title || 'Unknown'));
             card.appendChild(el('div', { className: 'album-card-artist' }, album.artist || 'Unknown Artist'));
-
-            row.appendChild(card);
-        });
-    }
-
-    // =========================================
-    //  Recently Played Row
-    // =========================================
-
-    function _renderRecentAlbums(api) {
-        var row = document.getElementById('home-recent-row');
-        if (!row) return;
-        row.textContent = '';
-
-        if (!_recentAlbums || _recentAlbums.length === 0) {
-            row.appendChild(el('div', { className: 'home-empty' }, 'No recently played albums'));
-            return;
-        }
-
-        _recentAlbums.forEach(function(album) {
-            var card = el('div', {
-                className: 'album-card focusable',
-                'data-album-id': album.id,
-                'data-album-title': album.name || album.title || ''
-            });
-
-            card.appendChild(SonanceComponents.renderAlbumArt(album, 162, api));
-            card.appendChild(el('div', { className: 'album-card-title' }, album.name || album.title || 'Unknown'));
-            card.appendChild(el('div', { className: 'album-card-artist' }, album.artist || 'Unknown Artist'));
-
             row.appendChild(card);
         });
     }
@@ -300,11 +316,9 @@ var HomeScreen = (function() {
                 'data-playlist-id': playlist.id
             });
             card.style.background = 'linear-gradient(135deg, ' + colors.base + ' 0%, var(--bg-card) 100%)';
-
             card.appendChild(el('div', { className: 'playlist-card-name' }, playlist.name || 'Untitled'));
             card.appendChild(el('div', { className: 'playlist-card-count' },
                 (playlist.songCount || 0) + ' tracks'));
-
             row.appendChild(card);
         });
     }
@@ -315,17 +329,18 @@ var HomeScreen = (function() {
 
     function _registerFocusZones() {
         var heroButtons = document.querySelectorAll('#home-hero .focusable');
+        var qaTiles = document.querySelectorAll('#home-qa-grid .focusable');
         var newestCards = document.querySelectorAll('#home-newest-row .focusable');
-        var recentCards = document.querySelectorAll('#home-recent-row .focusable');
         var playlistCards = document.querySelectorAll('#home-playlists-row .focusable');
 
-        // Determine which zones exist for neighbor wiring
         var hasHero = heroButtons.length > 0;
+        var hasQa = qaTiles.length > 0;
         var hasNewest = newestCards.length > 0;
-        var hasRecent = recentCards.length > 0;
         var hasPlaylists = playlistCards.length > 0;
 
-        // Hero buttons zone (registered as 'content' — top nav → down lands here)
+        var firstZone = hasHero ? 'content' : (hasQa ? 'home-qa' : (hasNewest ? 'content' : 'home-playlists'));
+
+        // Hero buttons → registered as 'content' (top nav Down lands here)
         if (hasHero) {
             FocusManager.registerZone('content', {
                 selector: '#home-hero .focusable',
@@ -334,12 +349,40 @@ var HomeScreen = (function() {
                 onFocus: function(idx, element) { _scrollToFocused(element); },
                 neighbors: {
                     left: 'topnav',
-                    down: hasNewest ? 'home-newest' : (hasRecent ? 'home-recent' : (hasPlaylists ? 'home-playlists' : 'nowplaying-bar'))
+                    down: hasQa ? 'home-qa' : (hasNewest ? 'home-newest' : (hasPlaylists ? 'home-playlists' : undefined))
                 }
             });
         }
 
-        // Recently Added zone (P4.9)
+        // Quick-access grid (2 rows × 3 cols)
+        if (hasQa) {
+            FocusManager.registerZone('home-qa', {
+                selector: '#home-qa-grid .focusable',
+                columns: 3,
+                onActivate: function(idx, element) { element.click(); },
+                onFocus: function(idx, element) { _scrollToFocused(element); },
+                neighbors: {
+                    left: 'topnav',
+                    up: hasHero ? 'content' : 'topnav',
+                    down: hasNewest ? 'home-newest' : (hasPlaylists ? 'home-playlists' : undefined)
+                }
+            });
+            if (!hasHero) {
+                // No hero — make the grid the 'content' entry zone too.
+                FocusManager.registerZone('content', {
+                    selector: '#home-qa-grid .focusable',
+                    columns: 3,
+                    onActivate: function(idx, element) { element.click(); },
+                    onFocus: function(idx, element) { _scrollToFocused(element); },
+                    neighbors: {
+                        left: 'topnav',
+                        down: hasNewest ? 'home-newest' : (hasPlaylists ? 'home-playlists' : undefined)
+                    }
+                });
+            }
+        }
+
+        // Recently Added row
         if (hasNewest) {
             FocusManager.registerZone('home-newest', {
                 selector: '#home-newest-row .focusable',
@@ -348,56 +391,22 @@ var HomeScreen = (function() {
                 onFocus: function(idx, element) { _scrollToFocused(element); },
                 neighbors: {
                     left: 'topnav',
-                    up: hasHero ? 'content' : 'topnav',
-                    down: hasRecent ? 'home-recent' : (hasPlaylists ? 'home-playlists' : 'nowplaying-bar')
+                    up: hasQa ? 'home-qa' : (hasHero ? 'content' : 'topnav'),
+                    down: hasPlaylists ? 'home-playlists' : undefined
                 }
             });
-
-            // If no hero, register newest as 'content' so top nav → down lands here
-            if (!hasHero) {
+            if (!hasHero && !hasQa) {
                 FocusManager.registerZone('content', {
                     selector: '#home-newest-row .focusable',
                     columns: newestCards.length,
                     onActivate: function(idx, element) { element.click(); },
                     onFocus: function(idx, element) { _scrollToFocused(element); },
-                    neighbors: {
-                        left: 'topnav',
-                        down: hasRecent ? 'home-recent' : (hasPlaylists ? 'home-playlists' : 'nowplaying-bar')
-                    }
+                    neighbors: { left: 'topnav', down: hasPlaylists ? 'home-playlists' : undefined }
                 });
             }
         }
 
-        // Recently Played zone
-        if (hasRecent) {
-            FocusManager.registerZone('home-recent', {
-                selector: '#home-recent-row .focusable',
-                columns: recentCards.length,
-                onActivate: function(idx, element) { element.click(); },
-                onFocus: function(idx, element) { _scrollToFocused(element); },
-                neighbors: {
-                    left: 'topnav',
-                    up: hasNewest ? 'home-newest' : (hasHero ? 'content' : 'topnav'),
-                    down: hasPlaylists ? 'home-playlists' : 'nowplaying-bar'
-                }
-            });
-
-            // If no hero and no newest, register recent as 'content'
-            if (!hasHero && !hasNewest) {
-                FocusManager.registerZone('content', {
-                    selector: '#home-recent-row .focusable',
-                    columns: recentCards.length,
-                    onActivate: function(idx, element) { element.click(); },
-                    onFocus: function(idx, element) { _scrollToFocused(element); },
-                    neighbors: {
-                        left: 'topnav',
-                        down: hasPlaylists ? 'home-playlists' : 'nowplaying-bar'
-                    }
-                });
-            }
-        }
-
-        // Playlists zone
+        // Playlists row (bottom — no down)
         if (hasPlaylists) {
             FocusManager.registerZone('home-playlists', {
                 selector: '#home-playlists-row .focusable',
@@ -406,40 +415,12 @@ var HomeScreen = (function() {
                 onFocus: function(idx, element) { _scrollToFocused(element); },
                 neighbors: {
                     left: 'topnav',
-                    up: hasRecent ? 'home-recent' : (hasNewest ? 'home-newest' : (hasHero ? 'content' : 'topnav')),
-                    down: 'nowplaying-bar'
+                    up: hasNewest ? 'home-newest' : (hasQa ? 'home-qa' : (hasHero ? 'content' : 'topnav'))
                 }
             });
         }
 
-        // Update NP bar to point up to last content zone
-        var lastZone = 'content';
-        if (hasPlaylists) lastZone = 'home-playlists';
-        else if (hasRecent) lastZone = 'home-recent';
-        else if (hasNewest) lastZone = 'home-newest';
-
-        FocusManager.registerZone('nowplaying-bar', {
-            selector: '.np-bar-btn',
-            columns: 3,
-            onActivate: function(index) {
-                if (index === 0) Player.previous();
-                else if (index === 1) Player.togglePlayPause();
-                else if (index === 2) Player.next();
-            },
-            neighbors: {
-                up: lastZone,
-                left: 'topnav'
-            }
-        });
-
-        // Set initial focus
-        if (hasHero) {
-            FocusManager.setActiveZone('content', 0);
-        } else if (hasNewest) {
-            FocusManager.setActiveZone('content', 0);
-        } else if (hasRecent) {
-            FocusManager.setActiveZone('content', 0);
-        }
+        FocusManager.setActiveZone(firstZone, 0);
     }
 
     // =========================================
@@ -455,11 +436,10 @@ var HomeScreen = (function() {
             errDiv.appendChild(el('div', { className: 'home-error-text' }, 'Unable to load data. Check your connection.'));
             heroContainer.appendChild(errDiv);
         }
-        // Clear skeleton rows
+        var qa = document.getElementById('home-qa-grid');
+        if (qa) qa.textContent = '';
         var newestRow = document.getElementById('home-newest-row');
         if (newestRow) newestRow.textContent = '';
-        var recentRow = document.getElementById('home-recent-row');
-        if (recentRow) recentRow.textContent = '';
         var playlistRow = document.getElementById('home-playlists-row');
         if (playlistRow) playlistRow.textContent = '';
     }
@@ -474,6 +454,7 @@ var HomeScreen = (function() {
         _newestAlbums = [];
         _recentAlbums = [];
         _playlists = [];
+        _quickAccess = [];
     }
 
     return {

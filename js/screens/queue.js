@@ -15,13 +15,8 @@ var QueueScreen = (function() {
     var _container = null;
     var _active = false;
 
-    // DOM references
-    var _npArt = null;
-    var _npTitle = null;
-    var _npArtist = null;
-    var _npProgressFill = null;
-    var _npTimeCurrent = null;
-    var _npTimeTotal = null;
+    // DOM references — REDESIGN: full-width list, no now-playing card (the
+    // top-left mini player already shows the current track).
     var _queueList = null;
     // V3.7-fix13: diff state for incremental queue-list updates
     var _lastQueueKeys = [];          // composite "id|queueIdx" keys
@@ -34,7 +29,7 @@ var QueueScreen = (function() {
     // =========================================
 
     function _scrollToFocused(element) {
-        var container = document.querySelector('.queue-right');
+        var container = document.getElementById('queue-list');
         if (!container || !element) return;
         var elTop = element.offsetTop;
         var elBottom = elTop + element.offsetHeight;
@@ -54,53 +49,13 @@ var QueueScreen = (function() {
     function render(container) {
         _container = container;
 
+        // REDESIGN: single full-width track list (the mini player shows the
+        // current track, so the now-playing card is gone).
         var wrapper = el('div', { className: 'queue-screen' });
-
-        // LEFT PANEL (320px) — Now Playing card
-        var leftPanel = el('div', { className: 'queue-left' });
-        leftPanel.appendChild(el('div', { className: 'queue-section-heading' }, 'Now Playing'));
-
-        var card = el('div', { className: 'queue-np-card focusable', id: 'queue-np-card' });
-        card.addEventListener('click', function() {
-            if (Player.getState().currentTrack) {
-                App.navigateTo('nowplaying');
-            }
-        });
-
-        _npArt = el('div', { className: 'queue-np-art' });
-        card.appendChild(_npArt);
-
-        _npTitle = el('div', { className: 'queue-np-title' }, 'No track playing');
-        card.appendChild(_npTitle);
-
-        _npArtist = el('div', { className: 'queue-np-artist' }, 'Select a song to begin');
-        card.appendChild(_npArtist);
-
-        // Mini progress bar in card
-        var progressWrap = el('div', { className: 'queue-np-progress-wrap' });
-        var progressBar = el('div', { className: 'queue-np-progress' });
-        _npProgressFill = el('div', { className: 'queue-np-progress-fill' });
-        progressBar.appendChild(_npProgressFill);
-        progressWrap.appendChild(progressBar);
-
-        var timeRow = el('div', { className: 'queue-np-time-row' });
-        _npTimeCurrent = el('span', { className: 'queue-np-time' }, '0:00');
-        _npTimeTotal = el('span', { className: 'queue-np-time' }, '0:00');
-        timeRow.appendChild(_npTimeCurrent);
-        timeRow.appendChild(_npTimeTotal);
-        progressWrap.appendChild(timeRow);
-
-        card.appendChild(progressWrap);
-        leftPanel.appendChild(card);
-        wrapper.appendChild(leftPanel);
-
-        // RIGHT PANEL — Up Next list
-        var rightPanel = el('div', { className: 'queue-right' });
-        rightPanel.appendChild(el('div', { className: 'queue-section-heading' }, 'Up Next'));
+        wrapper.appendChild(el('div', { className: 'queue-heading' }, 'Queue'));
 
         _queueList = el('div', { className: 'queue-list', id: 'queue-list' });
-        rightPanel.appendChild(_queueList);
-        wrapper.appendChild(rightPanel);
+        wrapper.appendChild(_queueList);
 
         container.appendChild(wrapper);
         log('Queue', 'Queue screen rendered');
@@ -113,14 +68,10 @@ var QueueScreen = (function() {
     function activate(params) {
         _active = true;
 
-        var pState = Player.getState();
-        _updateNowPlaying(pState.currentTrack);
-        _updateProgress(pState.currentTime, pState.duration);
-        _renderQueueList(pState);
+        _renderQueueList(Player.getState());
 
         // Subscribe to events
         Player.on('trackchange', _onTrackChange);
-        Player.on('progress', _onProgress);
         Player.on('queuechange', _onQueueChange);
 
         _registerFocusZones();
@@ -132,7 +83,6 @@ var QueueScreen = (function() {
 
     function _onTrackChange(track) {
         if (!_active) return;
-        _updateNowPlaying(track);
         // V3.7-fix13: trackchange shifts the queueIndex which usually drops
         // the head row from the up-next list. Run the diff (which mutates
         // exactly one row in the typical case) instead of full re-render.
@@ -141,11 +91,6 @@ var QueueScreen = (function() {
         var hasRows = _lastQueueKeys.length > 0;
         // Re-register zones only when the empty/non-empty state flipped.
         if (hadRows !== hasRows) _registerFocusZones();
-    }
-
-    function _onProgress(data) {
-        if (!_active) return;
-        _updateProgress(data.currentTime, data.duration);
     }
 
     function _onQueueChange() {
@@ -159,34 +104,6 @@ var QueueScreen = (function() {
     // =========================================
     //  UI Updates
     // =========================================
-
-    function _updateNowPlaying(track) {
-        if (!track) {
-            if (_npTitle) _npTitle.textContent = 'No track playing';
-            if (_npArtist) _npArtist.textContent = 'Select a song to begin';
-            if (_npArt) _npArt.textContent = '';
-            return;
-        }
-
-        if (_npTitle) _npTitle.textContent = track.title || 'Unknown';
-        if (_npArtist) _npArtist.textContent = track.artist || 'Unknown Artist';
-
-        if (_npArt) {
-            _npArt.textContent = '';
-            var api = AuthManager.getApi();
-            if (api) {
-                var artEl = SonanceComponents.renderAlbumArt(track, 280, api);
-                _npArt.appendChild(artEl);
-            }
-        }
-    }
-
-    function _updateProgress(currentTime, duration) {
-        var ratio = (duration > 0) ? (currentTime / duration) : 0;
-        if (_npProgressFill) _npProgressFill.style.setProperty('--progress', ratio.toString());
-        if (_npTimeCurrent) _npTimeCurrent.textContent = formatDuration(currentTime);
-        if (_npTimeTotal) _npTimeTotal.textContent = formatDuration(duration);
-    }
 
     // V3.7-fix13: build the up-next item list (source of truth for the diff).
     function _computeUpNext(pState) {
@@ -387,21 +304,8 @@ var QueueScreen = (function() {
         var queueRows = document.querySelectorAll('#queue-list .focusable');
         var hasQueue = queueRows.length > 0;
 
-        // V3-6-fix3 NAV-1: register the cover card as 'queue-card' (not 'content')
-        // so the topnav→Down candidates list in app.js falls through to
-        // 'queue-list' when the queue has items. 'queue-card' is appended to
-        // the candidates list so it's still the destination when the queue is empty.
-        FocusManager.registerZone('queue-card', {
-            selector: '#queue-np-card',
-            columns: 1,
-            onActivate: function(idx, element) { element.click(); },
-            neighbors: {
-                left: 'topnav',
-                right: hasQueue ? 'queue-list' : null,
-                down: 'nowplaying-bar'
-            }
-        });
-
+        // REDESIGN: a single full-width list zone. When the queue is empty
+        // there is nothing focusable — leave focus on the top nav.
         if (hasQueue) {
             FocusManager.registerZone('queue-list', {
                 selector: '#queue-list .focusable',
@@ -418,20 +322,17 @@ var QueueScreen = (function() {
                     }
                 },
                 neighbors: {
-                    left: 'queue-card',
                     down: 'nowplaying-bar'
                 }
             });
-        }
-
-        // Show colour button hints on queue screen
-        if (hasQueue) {
             App.showColourHints([
                 { colour: 'red', label: 'Remove' }
             ]);
+            FocusManager.setActiveZone('queue-list', 0);
+        } else {
+            FocusManager.unregisterZone('queue-list');
+            App.hideColourHints();
         }
-
-        FocusManager.setActiveZone(hasQueue ? 'queue-list' : 'queue-card', 0);
     }
 
     // =========================================
@@ -442,16 +343,10 @@ var QueueScreen = (function() {
         _active = false;
 
         Player.off('trackchange', _onTrackChange);
-        Player.off('progress', _onProgress);
         Player.off('queuechange', _onQueueChange);
+        App.hideColourHints();
 
         _container = null;
-        _npArt = null;
-        _npTitle = null;
-        _npArtist = null;
-        _npProgressFill = null;
-        _npTimeCurrent = null;
-        _npTimeTotal = null;
         _queueList = null;
         // V3.7-fix13: reset diff state so a re-entry rebuilds cleanly.
         _lastQueueKeys = [];

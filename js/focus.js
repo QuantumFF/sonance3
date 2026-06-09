@@ -40,6 +40,17 @@ var FocusManager = (function() {
      * }
      */
     function registerZone(name, config) {
+        // REDESIGN: the 'nowplaying-bar' zone is now the top-left mini player,
+        // owned and registered once by the app shell (selector '.mini-player').
+        // Legacy per-screen code still re-registers it with the dead
+        // '.np-bar-btn' selector — ignore those so the mini-player zone is not
+        // clobbered. (The dead registrations are removed per-screen.)
+        if (name === 'nowplaying-bar' && config &&
+            typeof config.selector === 'string' &&
+            config.selector.indexOf('np-bar-btn') >= 0) {
+            return;
+        }
+
         // V3.7-fix20: make re-registration with the same selector + virtual
         // flag idempotent. The topnav zone, in particular, is re-registered
         // on logout/login round trips because clearContentZones() preserves

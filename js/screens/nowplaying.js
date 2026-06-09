@@ -56,9 +56,29 @@ var NowPlayingScreen = (function() {
     var _shuffleBtn = null;
     var _repeatBtn = null;
     var _starBtn = null;
-    var _lyricsBtn = null;
     var _bgEl = null;
     var _progressBar = null;
+
+    // REDESIGN: Lyrics / Up Next toggle pair + always-visible right pane.
+    var _tabLyricsBtn = null;
+    var _tabUpNextBtn = null;
+    var _rightEl = null;
+    var _upNextEl = null;
+    var _upNextList = null;
+    // Active right-pane view: 'lyrics' | 'upnext'.
+    var _rightView = 'upnext';
+    // Whether the user has explicitly picked a view since the screen opened.
+    // While false, async lyrics arrival may flip the default upnext → lyrics
+    // (spec: "Default: Lyrics if available, else Up Next"). A manual tap sets
+    // this true and suppresses further auto-switching.
+    var _userChoseView = false;
+    // Open-time default still pending: true until the opening track's lyrics
+    // resolve. Gates the one-shot upnext→lyrics auto-switch so later track
+    // changes never yank the view out from under the user.
+    var _pendingDefault = true;
+    // Track id that was playing when the screen opened. The open-time default
+    // only applies to this track; once playback moves on, auto-switch is off.
+    var _defaultTrackId = null;
 
     // Layout + lyrics
     var _layoutEl = null;
@@ -73,7 +93,6 @@ var NowPlayingScreen = (function() {
     var _lyricsCache = {};        // songId → parsed lyrics | null
     var _pendingFetches = {};     // songId → true while a request is in flight
     var _currentLyrics = null;    // parsed structured lyrics for current track (or null)
-    var _lyricsVisible = false;
     // V3-6-fix4 PERF-1: deferred-fetch handles. rAF first guarantees the
     // current paint cycle ran; rIC then waits for browser idle time so the
     // network request never races first paint.
@@ -373,7 +392,7 @@ var NowPlayingScreen = (function() {
         // Dark overlay for text readability
         wrapper.appendChild(el('div', { className: 'np-bg-overlay' }));
 
-        // Two-column layout (P14b): .np-left + .np-lyrics-panel
+        // REDESIGN: always-visible 50/50 split: .np-left + .np-right
         _layoutEl = el('div', { className: 'np-layout' });
 
         var left = el('div', { className: 'np-left' });
@@ -509,37 +528,50 @@ var NowPlayingScreen = (function() {
         });
         controls.appendChild(_starBtn);
 
-        // Lyrics button (P14b) — last in the row
-        _lyricsBtn = el('button', {
-            className: 'np-ctrl-btn np-ctrl-lyrics focusable is-unavailable',
-            id: 'np-lyrics'
-        });
-        var lyricsSvg = createSvg('M3 5h14M3 9h10M3 13h12M3 17h8');
-        lyricsSvg.style.width = '24px';
-        lyricsSvg.style.height = '24px';
-        var lyricsPath = lyricsSvg.querySelector('path');
-        if (lyricsPath) {
-            lyricsPath.setAttribute('stroke', 'currentColor');
-            lyricsPath.setAttribute('stroke-width', '2');
-            lyricsPath.setAttribute('stroke-linecap', 'round');
-            lyricsPath.setAttribute('fill', 'none');
-        }
-        lyricsSvg.setAttribute('fill', 'none');
-        _lyricsBtn.appendChild(lyricsSvg);
-        _lyricsBtn.addEventListener('click', _toggleLyrics);
-        controls.appendChild(_lyricsBtn);
-
         left.appendChild(controls);
+
+        // REDESIGN: Lyrics / Up Next toggle pair — a separate row beneath the
+        // playback controls (visually separated). One active at a time; the
+        // active tab decides which view fills the always-visible right pane.
+        var tabs = el('div', { className: 'np-tabs' });
+
+        _tabLyricsBtn = el('button', {
+            className: 'np-tab focusable', id: 'np-tab-lyrics', 'data-view': 'lyrics'
+        }, 'Lyrics');
+        _tabLyricsBtn.addEventListener('click', function() { _setView('lyrics'); });
+        tabs.appendChild(_tabLyricsBtn);
+
+        _tabUpNextBtn = el('button', {
+            className: 'np-tab focusable', id: 'np-tab-upnext', 'data-view': 'upnext'
+        }, 'Up Next');
+        _tabUpNextBtn.addEventListener('click', function() { _setView('upnext'); });
+        tabs.appendChild(_tabUpNextBtn);
+
+        left.appendChild(tabs);
 
         _layoutEl.appendChild(left);
 
-        // Lyrics panel (P14b) — V3-6-fix4 PERF-3: outer panel only on the
-        // synchronous render path. Inner wrapper + lines container are built
-        // in a rAF below so the screen can paint and become interactive
-        // before any lyrics-side DOM work runs. _ensureLyricsPanelInner()
-        // synchronously back-fills if the user toggles lyrics ON first.
-        _lyricsPanel = el('div', { className: 'np-lyrics-panel' });
-        _layoutEl.appendChild(_lyricsPanel);
+        // REDESIGN: always-visible right pane (50% width). Holds two stacked
+        // views — the lyrics scroller and the Up Next list — only one shown at
+        // a time (the inactive one is display:none). Replaces the old slide-in
+        // lyrics panel.
+        _rightEl = el('div', { className: 'np-right' });
+
+        // Lyrics view. V3-6-fix4 PERF-3: outer panel only on the synchronous
+        // render path; inner wrapper + lines container are built in a rAF so
+        // the screen paints first. _ensureLyricsPanelInner() back-fills if the
+        // user opens lyrics before the rAF runs.
+        _lyricsPanel = el('div', { className: 'np-lyrics-view' });
+        _rightEl.appendChild(_lyricsPanel);
+
+        // Up Next view — heading + numbered list of upcoming tracks.
+        _upNextEl = el('div', { className: 'np-upnext-view' });
+        _upNextEl.appendChild(el('div', { className: 'np-upnext-heading' }, 'Up Next'));
+        _upNextList = el('div', { className: 'np-upnext-list', id: 'np-upnext-list' });
+        _upNextEl.appendChild(_upNextList);
+        _rightEl.appendChild(_upNextEl);
+
+        _layoutEl.appendChild(_rightEl);
 
         wrapper.appendChild(_layoutEl);
         container.appendChild(wrapper);
@@ -567,19 +599,34 @@ var NowPlayingScreen = (function() {
     function activate(params) {
         _active = true;
 
+        // Reset the right-pane view state for this session. The view starts on
+        // Up Next; if the opening track has cached lyrics, _scheduleLyricsForTrack
+        // → _updateLyricsUI honours the spec default and flips it to Lyrics.
+        _userChoseView = false;
+        _pendingDefault = true;
+        _rightView = 'upnext';
+
         var pState = Player.getState();
+        _defaultTrackId = pState.currentTrack ? pState.currentTrack.id : null;
         if (pState.currentTrack) {
             _updateTrack(pState.currentTrack);
-            // V3-6-fix4 PERF-1: defer lyrics off the open critical path.
-            // Cache hit applies synchronously; cache miss schedules a fetch
-            // for the next idle window so first paint + focus aren't blocked.
-            _scheduleLyricsForTrack(pState.currentTrack);
         }
         _updateProgress(pState.currentTime, pState.duration);
         _updatePlayIcon(pState.isPlaying);
         _updateShuffle(pState.shuffle);
         _updateRepeat(pState.repeat);
         _updateStar(pState.currentTrack && StarredCache.isSongStarred(pState.currentTrack.id));
+
+        // Establish the default view (renders the Up Next list + sets the
+        // pane display states) before kicking off lyrics.
+        _applyView('upnext');
+
+        if (pState.currentTrack) {
+            // V3-6-fix4 PERF-1: defer lyrics off the open critical path.
+            // Cache hit applies synchronously; cache miss schedules a fetch
+            // for the next idle window so first paint + focus aren't blocked.
+            _scheduleLyricsForTrack(pState.currentTrack);
+        }
 
         Player.on('trackchange', _onTrackChange);
         Player.on('progress', _onProgress);
@@ -588,6 +635,7 @@ var NowPlayingScreen = (function() {
         Player.on('shufflechange', _onShuffleChange);
         Player.on('repeatchange', _onRepeatChange);
         Player.on('seeked', _onSeeked);
+        Player.on('queuechange', _onQueueChange);
 
         _registerFocusZones();
         // V3-6-fix5 FIX-2: defer the focus flip past navigateTo()'s
@@ -647,21 +695,36 @@ var NowPlayingScreen = (function() {
     }
 
     function _registerFocusZones() {
-        // V3-6-fix5 FIX-2: the duplicate 'content' zone (same selector as
-        // 'np-controls') was removed. _getPageFirstZone() in app.js falls
-        // through to 'np-controls' for NP, so Down-from-topnav and the
-        // nav-auto-hide drop both still resolve correctly.
-        // NP screen is fullbleed with the top nav hidden — Up/Left do not escape.
-        // V3.7-fix29 Bug 1: keep the zone shape stable (constant selector +
-        // columns: 7) so the lyrics button is always reachable regardless
-        // of whether the current track has lyrics. The is-unavailable
-        // class is visual only; the click handler treats it as a no-op.
+        // Left-pane vertical stack: progress → playback controls → tab pair.
+        // The right pane (Up Next list) is reachable by pressing Right off the
+        // controls/tabs row, but only when Up Next is the active view AND it
+        // has rows. _getPageFirstZone() in app.js falls through to
+        // 'np-controls' for NP, so Down-from-topnav and the nav-auto-hide drop
+        // both resolve correctly. NP is fullbleed — Up/Left do not escape.
+        var upnextActive = (_rightView === 'upnext');
+        var upnextRows = document.querySelectorAll('#np-upnext-list .focusable');
+        var hasUpnext = upnextActive && upnextRows.length > 0;
+
+        // Six playback controls: shuffle, prev, play, next, repeat, star.
         FocusManager.registerZone('np-controls', {
             selector: '.np-screen-controls .focusable',
-            columns: 7,
+            columns: 6,
             onActivate: function(idx, element) { element.click(); },
             neighbors: {
-                up: 'np-progress'
+                up: 'np-progress',
+                down: 'np-tabs',
+                right: hasUpnext ? 'np-upnext' : null
+            }
+        });
+
+        // Lyrics / Up Next toggle pair.
+        FocusManager.registerZone('np-tabs', {
+            selector: '.np-tabs .focusable',
+            columns: 2,
+            onActivate: function(idx, element) { element.click(); },
+            neighbors: {
+                up: 'np-controls',
+                right: hasUpnext ? 'np-upnext' : null
             }
         });
 
@@ -683,6 +746,21 @@ var NowPlayingScreen = (function() {
                 down: 'np-controls'
             }
         });
+
+        // Up Next list — interactive, Enter skips to the track.
+        if (hasUpnext) {
+            FocusManager.registerZone('np-upnext', {
+                selector: '#np-upnext-list .focusable',
+                columns: 1,
+                onActivate: function(idx, element) { element.click(); },
+                onFocus: function(idx, element) { _scrollUpNextToFocused(element); },
+                neighbors: {
+                    left: 'np-tabs'
+                }
+            });
+        } else {
+            FocusManager.unregisterZone('np-upnext');
+        }
     }
 
     // =========================================
@@ -694,19 +772,32 @@ var NowPlayingScreen = (function() {
         _updateTrack(track);
         _updateStar(track && StarredCache.isSongStarred(track.id));
         _scheduleLyricsForTrack(track);
+        // The now-playing row + remaining up-next shift when the track changes.
+        if (_rightView === 'upnext') {
+            _renderUpNext();
+            _registerFocusZones();
+        }
+    }
+
+    function _onQueueChange() {
+        if (!_active) return;
+        if (_rightView === 'upnext') {
+            _renderUpNext();
+            _registerFocusZones();
+        }
     }
 
     function _onProgress(data) {
         if (!_active) return;
         _updateProgress(data.currentTime, data.duration);
-        if (_lyricsVisible && _currentLyrics && _currentLyrics.synced) {
+        if (_rightView === 'lyrics' && _currentLyrics && _currentLyrics.synced) {
             LyricsScroller.update(data.currentTime * 1000);
         }
     }
 
     function _onSeeked(currentTime) {
         if (!_active) return;
-        if (_lyricsVisible && _currentLyrics && _currentLyrics.synced) {
+        if (_rightView === 'lyrics' && _currentLyrics && _currentLyrics.synced) {
             LyricsScroller.jumpTo(currentTime * 1000);
         }
     }
@@ -825,103 +916,185 @@ var NowPlayingScreen = (function() {
         });
     }
 
+    // REDESIGN: the right pane is always visible and shows either the lyrics
+    // scroller or the Up Next list. _updateLyricsUI reflects lyrics
+    // availability on the Lyrics tab and, on the first lyrics resolution after
+    // the screen opens, honours the spec default ("Lyrics if available, else
+    // Up Next") by switching the still-default Up Next view over to Lyrics.
     function _updateLyricsUI() {
-        if (!_lyricsBtn) return;
+        if (!_tabLyricsBtn) return;
 
         var available = !!(_currentLyrics && _currentLyrics.line && _currentLyrics.line.length);
 
-        // V3.7-fix29 Bug 2: is-unavailable is visual only. _lyricsVisible
-        // (the user's intent: panel open vs closed) is decoupled from the
-        // data state and must only flip via _toggleLyrics / _openLyrics /
-        // _closeLyrics in response to user input. Track changes no longer
-        // close the panel.
         if (available) {
-            _lyricsBtn.classList.remove('is-unavailable');
+            _tabLyricsBtn.classList.remove('is-unavailable');
         } else {
-            _lyricsBtn.classList.add('is-unavailable');
+            _tabLyricsBtn.classList.add('is-unavailable');
         }
 
-        if (_lyricsVisible && available) {
+        // Apply the open-time default exactly once, and only for the track
+        // that was playing when the screen opened. Once playback moves on the
+        // default is retired so track changes never yank the view.
+        var curId = (Player.getState().currentTrack || {}).id;
+        if (_pendingDefault && curId !== _defaultTrackId) _pendingDefault = false;
+        if (_pendingDefault && !_userChoseView && available && _rightView === 'upnext') {
+            _pendingDefault = false;
+            _applyView('lyrics');
+            return; // _applyView re-inits the scroller + focus zones
+        }
+
+        // Keep the live lyrics view in sync (re-init on track change, or show
+        // the "No lyrics available" empty state when the current track lacks
+        // them). Init with a null payload renders the empty message.
+        if (_rightView === 'lyrics') {
             _ensureLyricsPanelInner();
             LyricsScroller.init(_lyricsWrapper, _lyricsLinesEl, _currentLyrics);
-            var ps = Player.getState();
-            if (_currentLyrics.synced) {
-                LyricsScroller.update((ps.currentTime || 0) * 1000);
+            if (available && _currentLyrics.synced) {
+                LyricsScroller.update((Player.getState().currentTime || 0) * 1000);
             }
-        } else if (_lyricsVisible && !available) {
-            // Panel still open but the new track has no lyrics — empty
-            // the lines so the previous track's content doesn't linger.
-            // _onProgress / _onSeeked guard with `_currentLyrics &&` so
-            // they're already safe in this state.
-            _ensureLyricsPanelInner();
-            LyricsScroller.reset();
         }
 
         if (_active) _registerFocusZones();
     }
 
-    function _toggleLyrics() {
-        // V3.7-fix29 Bug 1: clicks/Enter while the button is visually
-        // disabled (no lyrics for the current track) are a no-op. The
-        // button stays focusable so the user can pass Right through it,
-        // but pressing it must not flip _lyricsVisible.
-        if (_lyricsBtn && _lyricsBtn.classList.contains('is-unavailable')) return;
-        if (_lyricsVisible) {
-            _closeLyrics();
+    // Switch the right pane view. _applyView does the work; _setView is the
+    // user-driven entry point (tab click) and additionally records the manual
+    // choice so the open-time default no longer overrides it.
+    function _applyView(view) {
+        if (view !== 'lyrics' && view !== 'upnext') view = 'upnext';
+        _rightView = view;
+
+        if (_tabLyricsBtn) _tabLyricsBtn.classList.toggle('is-active', view === 'lyrics');
+        if (_tabUpNextBtn) _tabUpNextBtn.classList.toggle('is-active', view === 'upnext');
+        if (_lyricsPanel) _lyricsPanel.style.display = (view === 'lyrics') ? '' : 'none';
+        if (_upNextEl) _upNextEl.style.display = (view === 'upnext') ? '' : 'none';
+
+        if (view === 'lyrics') {
+            _ensureLyricsPanelInner();
+            LyricsScroller.init(_lyricsWrapper, _lyricsLinesEl, _currentLyrics);
+            if (_currentLyrics && _currentLyrics.synced) {
+                LyricsScroller.update((Player.getState().currentTime || 0) * 1000);
+            }
         } else {
-            _openLyrics();
+            _renderUpNext();
+        }
+
+        if (_active) _registerFocusZones();
+    }
+
+    function _setView(view) {
+        // Can't switch to Lyrics when the current track has none.
+        if (view === 'lyrics' && _tabLyricsBtn &&
+            _tabLyricsBtn.classList.contains('is-unavailable')) {
+            return;
+        }
+        _userChoseView = true;
+        _pendingDefault = false;
+        if (view === _rightView) return;
+        _applyView(view);
+    }
+
+    // =========================================
+    //  Up Next view (interactive — Enter skips to track)
+    // =========================================
+
+    function _scrollUpNextToFocused(element) {
+        var container = _upNextList;
+        if (!container || !element) return;
+        var elTop = element.offsetTop;
+        var elBottom = elTop + element.offsetHeight;
+        var viewTop = container.scrollTop;
+        var viewBottom = viewTop + container.clientHeight;
+        if (elBottom > viewBottom) {
+            container.scrollTop = elBottom - container.clientHeight + 20;
+        } else if (elTop < viewTop) {
+            container.scrollTop = elTop - 20;
         }
     }
 
-    // V3-6-fix4 PERF-4: replaces the static will-change declarations on
-    // .np-left, .np-lyrics-panel, .np-lyrics-lines. Set just before the
-    // class flip kicks off the transition; cleared 300ms later (after
-    // the 250ms slide settles) so the GPU layers don't stay reserved.
-    function _enableLyricsCompositingHints() {
-        if (_willChangeClearTimer !== null) {
-            clearTimeout(_willChangeClearTimer);
-            _willChangeClearTimer = null;
+    function _createUpNextRow(item, api) {
+        var track = item.track;
+        var row = el('div', {
+            className: 'np-upnext-row focusable',
+            'data-queue-idx': String(item.queueIdx)
+        });
+
+        // Leading position number (1-based, matches the visible list order).
+        row.appendChild(el('div', { className: 'np-upnext-index' }, String(item.position)));
+
+        var thumb = el('div', { className: 'np-upnext-thumb' });
+        var coverId = track.coverArt || track.albumId;
+        if (api && coverId) {
+            var img = document.createElement('img');
+            img.className = 'lazy-art';
+            img.setAttribute('data-coverart', coverId);
+            img.setAttribute('data-size', '100');
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.objectFit = 'cover';
+            img.style.borderRadius = '6px';
+            img.onerror = function() {
+                if (img.parentNode) img.parentNode.removeChild(img);
+            };
+            thumb.appendChild(img);
+            if (typeof LazyLoader !== 'undefined') LazyLoader.observe(img);
         }
-        if (_leftEl) _leftEl.style.willChange = 'transform';
-        if (_lyricsPanel) _lyricsPanel.style.willChange = 'transform, opacity';
-        if (_lyricsLinesEl) _lyricsLinesEl.style.willChange = 'transform';
+        row.appendChild(thumb);
+
+        var info = el('div', { className: 'np-upnext-info' });
+        info.appendChild(el('div', { className: 'np-upnext-title' }, track.title || 'Unknown'));
+        info.appendChild(el('div', { className: 'np-upnext-artist' }, track.artist || 'Unknown'));
+        row.appendChild(info);
+
+        // Trailing track duration (decorative metadata, right-aligned).
+        row.appendChild(el('div', { className: 'np-upnext-duration' },
+            (track._formattedDuration || formatDuration(track.duration))));
+
+        // Enter / click = skip to that track.
+        row.addEventListener('click', function() {
+            Player.jumpToQueueIndex(item.queueIdx);
+        });
+
+        return row;
     }
 
-    function _scheduleClearLyricsCompositingHints() {
-        if (_willChangeClearTimer !== null) {
-            clearTimeout(_willChangeClearTimer);
-        }
-        _willChangeClearTimer = setTimeout(function() {
-            _willChangeClearTimer = null;
-            if (_leftEl) _leftEl.style.willChange = '';
-            if (_lyricsPanel) _lyricsPanel.style.willChange = '';
-            if (_lyricsLinesEl) _lyricsLinesEl.style.willChange = '';
-        }, 300);
-    }
+    function _renderUpNext() {
+        if (!_upNextList) return;
+        _clearNode(_upNextList);
 
-    function _openLyrics() {
-        if (!_currentLyrics || !_currentLyrics.line || !_currentLyrics.line.length) return;
-        _ensureLyricsPanelInner();
-        _enableLyricsCompositingHints();
-        _lyricsVisible = true;
-        _layoutEl.classList.add('lyrics-active');
-        _lyricsBtn.classList.add('is-active');
-        LyricsScroller.init(_lyricsWrapper, _lyricsLinesEl, _currentLyrics);
         var ps = Player.getState();
-        if (_currentLyrics.synced) {
-            setTimeout(function() {
-                LyricsScroller.update((ps.currentTime || 0) * 1000);
-            }, 50);
-        }
-    }
+        var queue = ps.queue || [];
+        var currentIdx = ps.queueIndex;
 
-    function _closeLyrics() {
-        _lyricsVisible = false;
-        _enableLyricsCompositingHints(); // hold hints through the close slide
-        if (_layoutEl) _layoutEl.classList.remove('lyrics-active');
-        if (_lyricsBtn) _lyricsBtn.classList.remove('is-active');
-        LyricsScroller.reset();
-        _scheduleClearLyricsCompositingHints();
+        if (!queue.length) {
+            _upNextList.appendChild(el('div', { className: 'np-upnext-empty' }, 'Queue is empty'));
+            return;
+        }
+
+        var api = AuthManager.getApi();
+        // REDESIGN: list only the upcoming tracks (the current track is shown
+        // in the left pane), numbered 1..N in display order.
+        var items = [];
+        for (var i = currentIdx + 1; i < queue.length; i++) {
+            items.push({ track: queue[i], queueIdx: i });
+        }
+        if (ps.repeat === 'all' && currentIdx >= 0) {
+            for (var j = 0; j <= currentIdx; j++) {
+                items.push({ track: queue[j], queueIdx: j });
+            }
+        }
+
+        if (!items.length) {
+            _upNextList.appendChild(el('div', { className: 'np-upnext-empty' }, 'Nothing up next'));
+            return;
+        }
+
+        var frag = document.createDocumentFragment();
+        for (var k = 0; k < items.length; k++) {
+            items[k].position = k + 1;
+            frag.appendChild(_createUpNextRow(items[k], api));
+        }
+        _upNextList.appendChild(frag);
     }
 
     // =========================================
@@ -1118,9 +1291,8 @@ var NowPlayingScreen = (function() {
         Player.off('shufflechange', _onShuffleChange);
         Player.off('repeatchange', _onRepeatChange);
         Player.off('seeked', _onSeeked);
+        Player.off('queuechange', _onQueueChange);
 
-        if (_layoutEl) _layoutEl.classList.remove('lyrics-active');
-        _lyricsVisible = false;
         LyricsScroller.destroy();
 
         _container = null;
@@ -1144,11 +1316,15 @@ var NowPlayingScreen = (function() {
         _shuffleBtn = null;
         _repeatBtn = null;
         _starBtn = null;
-        _lyricsBtn = null;
+        _tabLyricsBtn = null;
+        _tabUpNextBtn = null;
         _bgEl = null;
         _progressBar = null;
         _layoutEl = null;
         _leftEl = null;
+        _rightEl = null;
+        _upNextEl = null;
+        _upNextList = null;
         _lyricsPanel = null;
         _lyricsWrapper = null;
         _lyricsLinesEl = null;

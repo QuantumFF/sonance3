@@ -70,16 +70,16 @@ var AlbumScreen = (function() {
         // Left panel skeleton
         var left = el('div', { className: 'album-detail-left' });
         left.appendChild(el('div', { className: 'skeleton', style: {
-            width: '180px', height: '180px', borderRadius: '10px', marginBottom: '20px'
+            width: '250px', height: '250px', borderRadius: '12px', marginBottom: '20px'
         }}));
         left.appendChild(el('div', { className: 'skeleton', style: {
-            width: '180px', height: '26px', borderRadius: '6px', marginBottom: '8px'
+            width: '250px', height: '32px', borderRadius: '6px', marginBottom: '10px'
         }}));
         left.appendChild(el('div', { className: 'skeleton', style: {
-            width: '140px', height: '18px', borderRadius: '6px', marginBottom: '8px'
+            width: '180px', height: '22px', borderRadius: '6px', marginBottom: '10px'
         }}));
         left.appendChild(el('div', { className: 'skeleton', style: {
-            width: '180px', height: '14px', borderRadius: '6px', marginBottom: '24px'
+            width: '250px', height: '16px', borderRadius: '6px', marginBottom: '24px'
         }}));
         body.appendChild(left);
 
@@ -90,7 +90,7 @@ var AlbumScreen = (function() {
         }}));
         for (var i = 0; i < 8; i++) {
             right.appendChild(el('div', { className: 'skeleton', style: {
-                width: '100%', height: '48px', borderRadius: '8px', marginBottom: '4px'
+                width: '100%', height: '64px', borderRadius: '10px', marginBottom: '6px'
             }}));
         }
         body.appendChild(right);
@@ -210,9 +210,9 @@ var AlbumScreen = (function() {
         // --- LEFT PANEL (fixed, no scroll) ---
         var leftPanel = el('div', { className: 'album-detail-left' });
 
-        // Album art (180px)
+        // Album art (250px — REDESIGN scale-up)
         var artWrap = el('div', { className: 'album-detail-art' });
-        artWrap.appendChild(SonanceComponents.renderAlbumArt(album, 180, api));
+        artWrap.appendChild(SonanceComponents.renderAlbumArt(album, 250, api));
         leftPanel.appendChild(artWrap);
 
         // Title + star (star is focusable)
@@ -266,9 +266,9 @@ var AlbumScreen = (function() {
         // Play button
         var playBtn = el('button', { className: 'album-play-btn focusable' });
         var playIcon = createSvg(SVG_PATHS.play);
-        playIcon.style.width = '16px';
-        playIcon.style.height = '16px';
-        playIcon.style.fill = 'white';
+        playIcon.style.width = '20px';
+        playIcon.style.height = '20px';
+        playIcon.style.fill = 'currentColor';
         playIcon.style.flexShrink = '0';
         playBtn.appendChild(playIcon);
         playBtn.appendChild(document.createTextNode(' Play'));
@@ -284,8 +284,8 @@ var AlbumScreen = (function() {
         // Shuffle button
         var shuffleBtn = el('button', { className: 'album-shuffle-btn focusable' });
         var shuffleIcon = createSvg(SVG_PATHS.shuffle);
-        shuffleIcon.style.width = '16px';
-        shuffleIcon.style.height = '16px';
+        shuffleIcon.style.width = '20px';
+        shuffleIcon.style.height = '20px';
         shuffleIcon.style.fill = 'currentColor';
         shuffleIcon.style.flexShrink = '0';
         shuffleBtn.appendChild(shuffleIcon);
